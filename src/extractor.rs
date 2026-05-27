@@ -4,18 +4,14 @@ use async_openai::{
     types::chat::{
         ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
         ChatCompletionRequestUserMessage, ChatCompletionResponseStream,
-        CreateChatCompletionRequest, CreateChatCompletionRequestArgs,
+        CreateChatCompletionRequestArgs,
     },
 };
-use futures::{StreamExt, TryFutureExt};
+use futures::StreamExt;
 use schemars::schema_for;
-use serde::{Deserialize, Serialize};
 use serde_json::Error;
 
-use crate::data_model::{
-    extractor::{ExtractedGraph, ExtractedInfo},
-    soul_mem::{MemoryLink, MemoryNote},
-};
+use crate::data_model::extractor::ExtractedInfo;
 
 pub struct Extractor {
     llm_client: async_openai::Client<OpenAIConfig>,

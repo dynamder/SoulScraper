@@ -1,9 +1,4 @@
-use std::{
-    fmt,
-    io::{Read, Write},
-    path::PathBuf,
-    str::FromStr,
-};
+use std::{fmt, io::Read, path::PathBuf, str::FromStr};
 
 #[derive(Debug, Clone)]
 pub enum InputSource {

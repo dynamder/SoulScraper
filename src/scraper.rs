@@ -1,11 +1,8 @@
-use std::default;
-use std::fmt::format;
-use std::mem::needs_drop;
 use std::sync::Arc;
 
 use async_openai::config::OpenAIConfig;
 use async_openai::error::OpenAIError;
-use async_openai::types::chat::ChatChoiceStream;
+
 use async_openai::types::chat::ChatCompletionMessageToolCall;
 use async_openai::types::chat::ChatCompletionMessageToolCallChunk;
 use async_openai::types::chat::ChatCompletionRequestAssistantMessage;
@@ -22,7 +19,6 @@ use serde_json::Value;
 use serde_json::json;
 
 use futures::StreamExt;
-use tracing::instrument;
 
 #[derive(Debug)]
 pub struct Fetcher {
@@ -165,7 +161,7 @@ impl Scraper {
             .messages(messages)
             .tools(Fetcher::tool_json())
             .build()?;
-        let mut stream = self.llm_client.chat().create_stream(request).await?;
+        let stream = self.llm_client.chat().create_stream(request).await?;
         Ok(stream)
     }
     async fn process_stream(

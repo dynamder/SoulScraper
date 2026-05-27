@@ -3,18 +3,13 @@ pub mod extractor;
 pub mod io_src;
 pub mod scraper;
 
-use std::{path::PathBuf, str::FromStr};
+use std::str::FromStr;
 
 use anyhow::anyhow;
 use async_openai::config::OpenAIConfig;
 use clap::{CommandFactory, Parser};
-use reqwest::Client;
-use schemars::{schema_for, schema_for_value};
-use secrecy::SecretString;
-use serde_json::{Value, json};
 
 use crate::{
-    data_model::extractor::{ExtractedInfo, ExtractedNode},
     extractor::Extractor,
     io_src::{InputSource, OutputSource},
     scraper::Scraper,
@@ -45,57 +40,6 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // println!(
-    //     "{}",
-    //     serde_json::to_string_pretty(&schema_for!(ExtractedInfo)).unwrap()
-    // );
-    //
-
-    // let test_node = schema_for_value!(json!({
-    //   "node_id": "ep1",
-    //   "tags": ["过去", "转变", "效忠"],
-    //   "mem_type": {
-    //     "mem_kind": "Situation",
-    //     "sit_kind": "SpecificSituation",
-    //     "narrative": "我原本是一名吸血鬼猎人，为了追杀蕾米莉亚而接近红魔馆。在交手中，我被大小姐击败了。她非但没有杀我，还赏识我的能力，赐予我‘十六夜咲夜’的名字，并收我为女仆。从那时起，我发誓效忠于她，从女仆一步步升为女仆长，与她越来越亲近。",
-    //     "time_span": "2001-01-01T00:00:00",
-    //     "context": {
-    //       "location": {
-    //         "name": "红魔馆",
-    //         "coordinates": ""
-    //       },
-    //       "participants": [
-    //         {"name": "十六夜咲夜", "role": "吸血鬼猎人"},
-    //         {"name": "蕾米莉亚·斯卡雷特", "role": "吸血鬼主人"}
-    //       ],
-    //       "emotions": [
-    //         {"name": "敬畏", "intensity": 0.8},
-    //         {"name": "感激", "intensity": 0.9}
-    //       ],
-    //       "environment": {
-    //         "atmosphere": "战斗后的宁静与命运的转折",
-    //         "tone": "庄严而温暖"
-    //       },
-    //       "event": [
-    //         {
-    //           "action": "击败并饶恕",
-    //           "action_intensity": 0.9,
-    //           "initiator": "蕾米莉亚·斯卡雷特",
-    //           "target": "十六夜咲夜"
-    //         }
-    //       ],
-    //       "sensory_data": []
-    //     }
-    //   }
-    // }));
-    // if test_node != schema_for!(ExtractedNode) {
-    //     panic!(
-    //         "schema mismatch!, llm:{}, rust: {}",
-    //         serde_json::to_string_pretty(&test_node).unwrap(),
-    //         serde_json::to_string_pretty(&schema_for!(ExtractedNode)).unwrap()
-    //     );
-    // }
-
     let subscriber = tracing_subscriber::fmt().compact().finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
@@ -158,7 +102,7 @@ async fn main() -> anyhow::Result<()> {
 
     if let Some(input_str) = &args.question {
         let input = InputSource::from_str(input_str)?;
-        let content = input
+        let _content = input
             .resolve()
             .map_err(|e| anyhow!("Fail to resolve input: \n{e}"))?;
 
