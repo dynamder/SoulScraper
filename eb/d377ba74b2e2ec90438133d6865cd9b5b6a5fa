@@ -1,0 +1,58 @@
+src/data_model/soul_mem/proc.rs
+  s_6fd023c92546be::t_498dcfb9bb7200 70
+src/data_model/soul_mem/sit.rs
+  s_74c3e36024a13e::t_227365e23d0645 114-115
+  s_74c3e36024a13e::t_5bc92d63995ff0 193-194
+  s_74c3e36024a13e::t_1865cb9904477c 189,210
+  s_0a3f193094683d::t_6a3a456de260e9 29-30
+  s_0a3f193094683d::t_555d48666870cd 7-8
+  s_74c3e36024a13e::t_017b00bb80fd1d 214-215
+Cargo.toml
+  s_0a3f193094683d::t_4d72bf866af4d3 24
+README_en.md
+  s_1aca43afb529ab::t_8f2e8619992c32 1-4,6-155,157-160
+src/data_model/soul_mem.rs
+  s_0a3f193094683d::t_19616e181d33ff 71-72
+README.md
+  s_1aca43afb529ab::t_991ffbdd69b1bc 1-4,6-155,157-160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "ebd377ba74b2e2ec90438133d6865cd9b5b6a5fa",
+  "prompts": {},
+  "sessions": {
+    "s_0a3f193094683d": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019e6999-d939-7975-a111-6ca1cdd01a7e",
+        "model": "MiniMax-M2.7"
+      },
+      "human_author": "dynamder <igaster@163.com>"
+    },
+    "s_1aca43afb529ab": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019e6a59-0f8a-7344-a833-6b5184184792",
+        "model": "MiniMax-M2.7"
+      },
+      "human_author": "dynamder <igaster@163.com>"
+    },
+    "s_6fd023c92546be": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019e64db-abd8-77e2-94cc-e4228fee0346",
+        "model": "MiniMax-M2.7"
+      },
+      "human_author": "dynamder <igaster@163.com>"
+    },
+    "s_74c3e36024a13e": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019e68ac-b6b4-7b9f-ba92-56096ca9e5fd",
+        "model": "MiniMax-M2.7"
+      },
+      "human_author": "dynamder <igaster@163.com>"
+    }
+  }
+}
