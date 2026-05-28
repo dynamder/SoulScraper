@@ -1,6 +1,7 @@
 pub mod data_model;
 pub mod extractor;
 pub mod io_src;
+pub mod questioner;
 pub mod scraper;
 
 use std::str::FromStr;
@@ -12,6 +13,7 @@ use clap::{CommandFactory, Parser};
 use crate::{
     extractor::Extractor,
     io_src::{InputSource, OutputSource},
+    questioner::{Quest, QuestionArgs, QuestionType, retrieve::RetrieveQuestioner},
     scraper::Scraper,
 };
 
@@ -28,8 +30,8 @@ struct Args {
     #[arg(short, long)]
     extract: Option<String>,
 
-    #[arg(short, long)]
-    question: Option<String>,
+    #[command(flatten)]
+    question: Option<QuestionArgs>,
 
     #[arg(short, long)]
     output: String,
@@ -60,7 +62,8 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let scraper = Scraper::new(openai_config.clone());
-    let extractor = Extractor::new(openai_config);
+    let extractor = Extractor::new(openai_config.clone());
+    let retrieve_questioner = RetrieveQuestioner::new(openai_config);
 
     let model = &args.model;
 
@@ -100,13 +103,51 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    if let Some(input_str) = &args.question {
-        let input = InputSource::from_str(input_str)?;
-        let _content = input
-            .resolve()
-            .map_err(|e| anyhow!("Fail to resolve input: \n{e}"))?;
+    if let Some(question_args) = &args.question {
+        let QuestionArgs {
+            retrieve,
+            consolidate,
+            forget,
+            query,
+        } = question_args;
 
-        todo!("question generation not yet implemented.");
+        let question_mode = match (retrieve, consolidate, forget) {
+            (true, false, false) => QuestionType::Retrieve,
+            (false, true, false) => QuestionType::Consolidate,
+            (false, false, true) => QuestionType::Forget,
+            _ => anyhow::bail!(
+                "Invalid question mode, only one of --retrieve, --consolidate, or --forget should be specified"
+            ),
+        };
+
+        let query_content = if let Some(query) = query.as_ref() {
+            let input = InputSource::from_str(query)?;
+            let content = input
+                .resolve()
+                .map_err(|e| anyhow!("Fail to resolve input: \n{e}"))?;
+            Some(content)
+        } else {
+            None
+        };
+        match question_mode {
+            QuestionType::Retrieve => {
+                let generated_question = retrieve_questioner
+                    .quest(model, query_content.as_deref())
+                    .await?;
+                output
+                    .write(&serde_json::to_string_pretty(&generated_question)?)
+                    .map_err(|e| anyhow!("Fail to write output: {e}"))?;
+            }
+            QuestionType::Consolidate => {
+                todo!("not support yet")
+            }
+            QuestionType::Forget => {
+                todo!("not support yet")
+            }
+        }
+
+        println!("Question completed!");
+        return Ok(());
     }
 
     eprintln!("Error: Please specify --scrape, --extract, or --question");
