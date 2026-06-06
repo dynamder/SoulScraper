@@ -23,12 +23,22 @@
 - **程序性记忆**：行为模式、习惯、条件反射
 - 自动修复 LLM 输出中的 JSON 格式错误
 
+### 3. 检索查询生成（Retrieve）
+
+从角色记忆图谱自动生成结构化的检索查询，用于评估检索系统的质量：
+
+- 自动生成模拟真实用户提问的检索查询（≥60 个）
+- 包含语义查询（Semantic）和情境查询（Situation）两种变体
+- 查询集合（Query Set）提供同一意图的多种口语化表达变体
+- 每个查询自动标注期望命中的记忆节点（must_include / may_include）
+- 支持 `--tendency` 参数控制生成倾向
+
 ## 快速开始
 
 ### 环境要求
 
 - Rust 1.75+ / Cargo
-- OpenAI API Key 或兼容的 API Base（如硅基流动等）
+- OpenAI API Key 或兼容的 API Base
 
 ### 构建
 
@@ -48,15 +58,11 @@ $env:SOUL_SCRAPER_KEY="your_api_key_here"
 
 ### 抓取角色信息
 
-从网页 URL 抓取角色研究报告：
-
 ```bash
 soul_scraper --model gpt-4o --scrape "https://zh.moegirl.org.cn/十六夜咲夜" --output result.md
 ```
 
 ### 提取记忆图谱
-
-从文件或标准输入读取角色信息，输出 JSON 格式的记忆图谱：
 
 ```bash
 # 从文件读取
@@ -69,6 +75,16 @@ type result.md | cargo run -- --model gpt-4o --extract - --output memory.json
 soul_scraper --model gpt-4o --extract "十六夜咲夜是红魔馆的女仆长..." --output memory.json
 ```
 
+### 生成检索查询
+
+```bash
+# 基础用法
+soul_scraper --model gpt-4o --retrieve --query memory.json --output queries.json
+
+# 带生成倾向
+soul_scraper --model gpt-4o --retrieve --query memory.json --output queries.json --tendency "侧重人物关系查询，多使用Semantic变体"
+```
+
 ## 命令行参数
 
 | 参数 | 说明 |
@@ -76,31 +92,13 @@ soul_scraper --model gpt-4o --extract "十六夜咲夜是红魔馆的女仆长..
 | `--model <MODEL>` | 使用的 LLM 模型名称（如 `gpt-4o`）|
 | `--scrape <URL>` | 从指定 URL 抓取角色信息 |
 | `--extract <INPUT>` | 从文件路径、内容字符串或 `-`（stdin）提取记忆 |
-| `--question <INPUT>` | 问答模式（暂未实现）|
+| `--retrieve` | 检索查询生成模式 |
+| `--query <INPUT>` | 检索查询的输入（记忆图谱 JSON 文件路径或内容）|
+| `--tendency <STR>` | 查询生成倾向（可选） |
 | `-o, --output <PATH>` | 输出文件路径，`-` 表示 stdout |
 | `--api-base <URL>` | OpenAI 兼容 API 地址（可选）|
 
-## 项目结构
 
-```
-soul_scraper/
-├── src/
-│   ├── main.rs                 # CLI 入口与参数解析
-│   ├── scraper.rs             # 角色抓取模块（LLM Agent + Web Fetcher）
-│   ├── extractor.rs           # 记忆提取模块
-│   ├── io_src.rs              # 输入输出源抽象
-│   ├── data_model/
-│   │   ├── extractor.rs       # 提取输出的数据结构
-│   │   └── soul_mem/          # 记忆系统数据模型
-│   │       ├── sem.rs         # 语义记忆
-│   │       ├── sit.rs         # 情境记忆
-│   │       └── proc.rs        # 程序性记忆
-│   └── prompt_template/
-│       ├── scraper_system     # 抓取 Agent 系统提示
-│       ├── extractor_system   # 提取系统提示
-│       └── extractor_fix_system # JSON 修复系统提示
-└── test_output/                # 测试输出示例
-```
 
 ## 输出格式示例
 
@@ -143,13 +141,48 @@ soul_scraper/
 }
 ```
 
-## 技术特点
+### 检索查询输出（JSON）
 
-- **完全开源**：基于 Rust 语言，高性能、易于集成
-- **LLM 驱动**：使用 OpenAI API 或兼容的第三方 API
-- **结构化输出**：输出符合 JsonSchema 的标准化数据
-- **自动容错**：内置 JSON 修复机制，应对 LLM 输出格式问题
-- **灵活输入输出**：支持文件、字符串、标准输入/输出
+```json
+{
+  "queries": [
+    {
+      "priority": 9,
+      "tags": ["人物"],
+      "expected": {
+        "must_include": ["sem_bronya"],
+        "may_include": []
+      },
+      "variant": {
+        "variant_kind": "Semantic",
+        "units": [
+          {
+            "concept_identifier": "她的姐姐大人",
+            "description": "那个在孤儿院一直保护她的银发女生"
+          }
+        ]
+      }
+    }
+  ],
+  "query_sets": [
+    {
+      "set_id": "set_bronya",
+      "description": "查询希儿最重要的人",
+      "queries": [
+        {
+          "priority": 9,
+          "tags": ["人物"],
+          "expected": { "must_include": ["sem_bronya"], "may_include": [] },
+          "variant": {
+            "variant_kind": "Semantic",
+            "units": [{ "concept_identifier": "她的姐姐大人", "description": "那个总是保护她的银发女生" }]
+          }
+        }
+      ]
+    }
+  ]
+}
+```
 
 ## 配套项目
 

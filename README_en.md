@@ -23,12 +23,22 @@ Converts character research reports into structured **Memory Graphs**:
 - **Procedural Memory**: Behavior patterns, habits, conditioned reflexes
 - Automatically fixes JSON format errors in LLM output
 
+### 3. Retrieval Query Generation (Retrieve)
+
+Automatically generates structured retrieval queries from character memory graphs for evaluating retrieval system quality:
+
+- Auto-generates 60+ retrieval queries that simulate real user questions
+- Includes both Semantic and Situation query variants
+- Query Sets provide multiple colloquial expression variants for the same intent
+- Each query is annotated with expected retrieval nodes (must_include / may_include)
+- Supports `--tendency` flag to control generation bias
+
 ## Quick Start
 
 ### Requirements
 
 - Rust 1.75+ / Cargo
-- OpenAI API Key or compatible API Base (e.g., SiliconFlow)
+- OpenAI API Key or compatible API Base
 
 ### Build
 
@@ -69,6 +79,18 @@ type result.md | cargo run -- --model gpt-4o --extract - --output memory.json
 soul_scraper --model gpt-4o --extract "Sakuya is the head maid of the Scarlet Devil Mansion..." --output memory.json
 ```
 
+### Generate Retrieval Queries
+
+Auto-generate retrieval queries from a memory graph JSON file:
+
+```bash
+# Basic usage
+soul_scraper --model gpt-4o --retrieve --query memory.json --output queries.json
+
+# With generation tendency
+soul_scraper --model gpt-4o --retrieve --query memory.json --output queries.json --tendency "Focus on relationship queries, prefer Semantic variant"
+```
+
 ## Command Line Options
 
 | Option | Description |
@@ -76,31 +98,13 @@ soul_scraper --model gpt-4o --extract "Sakuya is the head maid of the Scarlet De
 | `--model <MODEL>` | LLM model name (e.g., `gpt-4o`) |
 | `--scrape <URL>` | Scrape character info from specified URL |
 | `--extract <INPUT>` | Extract memory from file path, content string, or `-` (stdin) |
-| `--question <INPUT>` | Question answering mode (not yet implemented) |
+| `--retrieve` | Retrieval query generation mode |
+| `--query <INPUT>` | Input for retrieval query generation (memory graph JSON file path or content) |
+| `--tendency <STR>` | Query generation tendency (optional) |
 | `-o, --output <PATH>` | Output file path, `-` for stdout |
 | `--api-base <URL>` | OpenAI-compatible API base URL (optional) |
 
-## Project Structure
 
-```
-soul_scraper/
-├── src/
-│   ├── main.rs                 # CLI entry and argument parsing
-│   ├── scraper.rs              # Character scraping module (LLM Agent + Web Fetcher)
-│   ├── extractor.rs            # Memory extraction module
-│   ├── io_src.rs              # Input/Output source abstraction
-│   ├── data_model/
-│   │   ├── extractor.rs        # Extraction output data structures
-│   │   └── soul_mem/           # Memory system data model
-│   │       ├── sem.rs          # Semantic memory
-│   │       ├── sit.rs          # Situational memory
-│   │       └── proc.rs         # Procedural memory
-│   └── prompt_template/
-│       ├── scraper_system      # Scrape Agent system prompt
-│       ├── extractor_system    # Extraction system prompt
-│       └── extractor_fix_system # JSON fix system prompt
-└── test_output/                # Test output examples
-```
 
 ## Output Format Examples
 
@@ -143,13 +147,48 @@ soul_scraper/
 }
 ```
 
-## Technical Features
+### Retrieval Query Output (JSON)
 
-- **Fully Open Source**: Built with Rust for high performance and easy integration
-- **LLM-Powered**: Uses OpenAI API or compatible third-party APIs
-- **Structured Output**: Outputs standardized data conforming to JsonSchema
-- **Auto Error Recovery**: Built-in JSON fix mechanism for LLM output format issues
-- **Flexible I/O**: Supports file, string, stdin/stdout
+```json
+{
+  "queries": [
+    {
+      "priority": 9,
+      "tags": ["character"],
+      "expected": {
+        "must_include": ["sem_bronya"],
+        "may_include": []
+      },
+      "variant": {
+        "variant_kind": "Semantic",
+        "units": [
+          {
+            "concept_identifier": "her big sister",
+            "description": "the silver-haired girl who always protected her at the orphanage"
+          }
+        ]
+      }
+    }
+  ],
+  "query_sets": [
+    {
+      "set_id": "set_bronya",
+      "description": "Query about the most important person to Seele",
+      "queries": [
+        {
+          "priority": 9,
+          "tags": ["character"],
+          "expected": { "must_include": ["sem_bronya"], "may_include": [] },
+          "variant": {
+            "variant_kind": "Semantic",
+            "units": [{ "concept_identifier": "her big sister", "description": "the silver-haired girl who always protected her" }]
+          }
+        }
+      ]
+    }
+  ]
+}
+```
 
 ## Related Projects
 
