@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::data_model::extractor::ExtractedInfo;
-use crate::data_model::questioner::retrieve::PrioritizedRetrieveQuery;
+use crate::data_model::questioner::retrieve::{ExpectedResult, PrioritizedRetrieveQuery};
 
 /// 检索策略，控制测试用例适用哪个检索算法
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -91,22 +91,6 @@ pub struct RetrieveTestCase {
     pub retrieve_queries: Vec<PrioritizedRetrieveQuery>,
     /// 期望的检索结果
     pub expected: ExpectedResult,
-}
-
-/// 期望的检索结果，按必须/可能/禁止命中三级区分
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ExpectedResult {
-    /// 必须命中的 node_id 列表
-    #[serde(default)]
-    pub must_include: Vec<String>,
-
-    /// 可能命中的 node_id 列表
-    #[serde(default)]
-    pub may_include: Vec<String>,
-
-    /// 不应命中的 node_id 列表
-    #[serde(default)]
-    pub must_exclude: Vec<String>,
 }
 
 /// 查询用例集合，通过 case_id 引用原子用例，集合整体按 top_k 评估

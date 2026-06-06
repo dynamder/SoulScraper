@@ -22,6 +22,18 @@ pub struct QuerySet {
     pub queries: Vec<PrioritizedRetrieveQuery>,
 }
 
+/// 期望的检索结果，按必须/可能命中两级区分
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct ExpectedResult {
+    /// 必须命中的核心节点 node_id 列表
+    #[serde(default)]
+    pub must_include: Vec<String>,
+
+    /// 可能命中的次要节点 node_id 列表
+    #[serde(default)]
+    pub may_include: Vec<String>,
+}
+
 /// 带优先级的检索查询，优先级决定多个查询合并时该查询分数的权重
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PrioritizedRetrieveQuery {
@@ -29,6 +41,10 @@ pub struct PrioritizedRetrieveQuery {
 
     #[serde(flatten)]
     pub query: RetrieveQuery,
+
+    /// 期望的检索结果
+    #[serde(default)]
+    pub expected: ExpectedResult,
 }
 
 /// 单个检索查询：统一标签 + 查询变体（语义/情境）
