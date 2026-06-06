@@ -1,9 +1,24 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// Questioner 输出：LLM 将自然语言问题转化为的结构化检索查询列表
+/// Questioner 输出：LLM 生成的结构化检索查询及查询集合
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RetrieveAssessInfo {
+    /// 原子检索查询
+    pub queries: Vec<PrioritizedRetrieveQuery>,
+    /// 查询集合：同一检索意图的多种表达变体，用于测试检索泛化性能
+    pub query_sets: Vec<QuerySet>,
+}
+
+/// 同一检索意图的多种口语化表达，测试检索系统对不同措辞的泛化能力
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct QuerySet {
+    /// 集合唯一标识
+    pub set_id: String,
+    /// 集合的统一描述，说明检索意图（如"查询希儿最重要的伙伴"）
+    pub description: String,
+    /// 同一意图的多种表达变体（2-8 个）
+    #[serde(default)]
     pub queries: Vec<PrioritizedRetrieveQuery>,
 }
 
