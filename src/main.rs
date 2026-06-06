@@ -63,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
 
     let scraper = Scraper::new(openai_config.clone());
     let extractor = Extractor::new(openai_config.clone());
-    let retrieve_questioner = RetrieveQuestioner::new(openai_config);
+    let mut retrieve_questioner = RetrieveQuestioner::new(openai_config);
 
     let model = &args.model;
 
@@ -109,6 +109,7 @@ async fn main() -> anyhow::Result<()> {
             consolidate,
             forget,
             query,
+            tendency,
         } = question_args;
 
         let question_mode = match (retrieve, consolidate, forget) {
@@ -129,6 +130,11 @@ async fn main() -> anyhow::Result<()> {
         } else {
             None
         };
+
+        if let Some(t) = tendency {
+            retrieve_questioner = retrieve_questioner.with_tendency(t.clone());
+        }
+
         match question_mode {
             QuestionType::Retrieve => {
                 let generated_question = retrieve_questioner

@@ -14,12 +14,20 @@ use crate::{data_model::questioner::retrieve::RetrieveAssessInfo, questioner::Qu
 
 pub struct RetrieveQuestioner {
     llm_client: async_openai::Client<OpenAIConfig>,
+    tendency: Option<String>,
 }
 impl RetrieveQuestioner {
     pub fn new(config: OpenAIConfig) -> Self {
         Self {
             llm_client: async_openai::Client::with_config(config),
+            tendency: None,
         }
+    }
+
+    /// 设置检索查询的生成倾向
+    pub fn with_tendency(mut self, tendency: String) -> Self {
+        self.tendency = Some(tendency);
+        self
     }
 
     fn prepare_msgs(&self, query: Option<&str>) -> Vec<ChatCompletionRequestMessage> {
@@ -31,9 +39,15 @@ impl RetrieveQuestioner {
             serde_json::to_string_pretty(&info_schema).unwrap()
         );
 
-        let user_msg = match query {
-            Some(q) => format!("根据以下角色信息，将自然语言问题转化为检索查询：\n\n{q}"),
-            None => "请根据已提供的角色信息，转化检索查询。".to_string(),
+        let user_msg = match (query, &self.tendency) {
+            (Some(q), Some(t)) => format!(
+                "根据以下角色记忆图谱，自动生成检索查询集合。倾向：{t}\n\n{q}"
+            ),
+            (Some(q), None) => format!(
+                "根据以下角色记忆图谱，自动生成检索查询集合：\n\n{q}"
+            ),
+            (None, Some(t)) => format!("自动生成检索查询集合。倾向：{t}"),
+            (None, None) => "自动生成检索查询集合。".to_string(),
         };
 
         vec![
@@ -94,11 +108,17 @@ impl RetrieveQuestioner {
             serde_json::to_string_pretty(&info_schema).unwrap()
         );
 
-        let user_msg = match query {
-            Some(q) => format!(
-                "原始上下文:\n{q}\n\n# 损坏的 JSON\n{json_str}\n\n# 错误原因\n{de_err}"
+        let user_msg = match (query, &self.tendency) {
+            (Some(q), Some(t)) => format!(
+                "角色记忆图谱:\n{q}\n\n生成倾向:\n{t}\n\n# 损坏的 JSON\n{json_str}\n\n# 错误原因\n{de_err}"
             ),
-            None => format!("# 损坏的 JSON\n{json_str}\n\n# 错误原因\n{de_err}"),
+            (Some(q), None) => format!(
+                "角色记忆图谱:\n{q}\n\n# 损坏的 JSON\n{json_str}\n\n# 错误原因\n{de_err}"
+            ),
+            (None, Some(t)) => format!(
+                "生成倾向:\n{t}\n\n# 损坏的 JSON\n{json_str}\n\n# 错误原因\n{de_err}"
+            ),
+            (None, None) => format!("# 损坏的 JSON\n{json_str}\n\n# 错误原因\n{de_err}"),
         };
 
         let messages: Vec<ChatCompletionRequestMessage> = vec![

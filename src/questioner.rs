@@ -19,6 +19,8 @@ pub struct QuestionArgs {
     pub forget: bool,
     #[arg(long)]
     pub query: Option<String>,
+    #[arg(long)]
+    pub tendency: Option<String>,
 }
 
 pub trait Quest {
