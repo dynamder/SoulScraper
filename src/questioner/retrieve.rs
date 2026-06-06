@@ -2,10 +2,13 @@ use async_openai::{
     config::OpenAIConfig,
     error::OpenAIError,
     types::chat::{
-        ChatCompletionRequestMessage, ChatCompletionResponseStream, CreateChatCompletionRequestArgs,
+        ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
+        ChatCompletionRequestUserMessage, ChatCompletionResponseStream,
+        CreateChatCompletionRequestArgs,
     },
 };
 use futures::StreamExt;
+use schemars::schema_for;
 
 use crate::{data_model::questioner::retrieve::RetrieveAssessInfo, questioner::Quest};
 
@@ -20,7 +23,23 @@ impl RetrieveQuestioner {
     }
 
     fn prepare_msgs(&self, query: Option<&str>) -> Vec<ChatCompletionRequestMessage> {
-        todo!()
+        let system_prompt_head =
+            include_str!("../prompt_template/questioner/retrieve_system");
+        let info_schema = schema_for!(RetrieveAssessInfo);
+        let system_prompt = format!(
+            "{system_prompt_head}\n\n{}",
+            serde_json::to_string_pretty(&info_schema).unwrap()
+        );
+
+        let user_msg = match query {
+            Some(q) => format!("根据以下角色信息，将自然语言问题转化为检索查询：\n\n{q}"),
+            None => "请根据已提供的角色信息，转化检索查询。".to_string(),
+        };
+
+        vec![
+            ChatCompletionRequestSystemMessage::from(system_prompt).into(),
+            ChatCompletionRequestUserMessage::from(user_msg).into(),
+        ]
     }
 
     async fn create_stream(
@@ -58,12 +77,38 @@ impl RetrieveQuestioner {
                 }
             }
         }
-        // for (i, c) in assess_info_str.chars().enumerate() {
-        //     if c.is_control() && c != '\t' && c != '\n' && c != '\r' {
-        //         tracing::warn!("Control character found at index {}: {:x}", i, c as u32);
-        //     }
-        // }
         Ok(assess_info_str)
+    }
+
+    async fn try_fix_json(
+        &self,
+        json_str: &str,
+        query: Option<&str>,
+        model: &str,
+        de_err: serde_json::Error,
+    ) -> anyhow::Result<String> {
+        let fixer_head = "你是一个 JSON 修复助手。以下 JSON 解析失败，请根据错误信息和原始上下文修复它，使其符合要求的 Schema。仅输出修复后的 JSON，不包含任何解释。";
+        let info_schema = schema_for!(RetrieveAssessInfo);
+        let fixer_system = format!(
+            "{fixer_head}\n{}",
+            serde_json::to_string_pretty(&info_schema).unwrap()
+        );
+
+        let user_msg = match query {
+            Some(q) => format!(
+                "原始上下文:\n{q}\n\n# 损坏的 JSON\n{json_str}\n\n# 错误原因\n{de_err}"
+            ),
+            None => format!("# 损坏的 JSON\n{json_str}\n\n# 错误原因\n{de_err}"),
+        };
+
+        let messages: Vec<ChatCompletionRequestMessage> = vec![
+            ChatCompletionRequestSystemMessage::from(fixer_system).into(),
+            ChatCompletionRequestUserMessage::from(user_msg).into(),
+        ];
+
+        let stream = self.create_stream(messages, model).await?;
+        tracing::info!("json fix stream created");
+        self.process_stream(stream).await.map_err(|e| e.into())
     }
 }
 
@@ -76,11 +121,23 @@ impl Quest for RetrieveQuestioner {
         tracing::info!("processing stream...");
         let raw_response = self.process_stream(stream).await?;
 
-        let retrieve_assess_info =
-            serde_json::from_str::<Self::Output>(&raw_response).map_err(|e| {
-                tracing::error!("Fatal: fail to deserialize. received:\n{raw_response}");
-                e
-            })?;
-        Ok(retrieve_assess_info)
+        let retrieve_assess_info = serde_json::from_str::<Self::Output>(&raw_response);
+
+        let fixed = match retrieve_assess_info {
+            Ok(info) => info,
+            Err(e) => {
+                tracing::warn!("json deserialization failed, trying fix...");
+                let fix_response =
+                    self.try_fix_json(&raw_response, query, model, e).await?;
+                serde_json::from_str::<Self::Output>(&fix_response).map_err(|fatal_err| {
+                    tracing::error!(
+                        "fatal error in deserialization after fix. received:\n{fix_response}"
+                    );
+                    fatal_err
+                })?
+            }
+        };
+
+        Ok(fixed)
     }
 }
