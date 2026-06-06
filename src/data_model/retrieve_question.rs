@@ -4,6 +4,14 @@ use serde::{Deserialize, Serialize};
 use crate::data_model::extractor::ExtractedInfo;
 use crate::data_model::questioner::retrieve::PrioritizedRetrieveQuery;
 
+/// 检索策略，控制测试用例适用哪个检索算法
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RetrieveStrategy {
+    Similarity,
+    Association,
+}
+
 /// 检索功能的测试数据：包含记忆图谱、原子查询用例及查询集合
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RetrieveTestData {
@@ -76,6 +84,9 @@ pub struct RetrieveTestCase {
     pub description: String,
     /// 原始自然语言问题（作为 LLM 输入）
     pub natural_query: String,
+    /// 适用的检索策略，空表示全部策略适用
+    #[serde(default)]
+    pub strategies: Vec<RetrieveStrategy>,
     /// 期望 LLM 生成的结构化检索查询列表
     pub retrieve_queries: Vec<PrioritizedRetrieveQuery>,
     /// 期望的检索结果
@@ -98,13 +109,18 @@ pub struct ExpectedResult {
     pub must_exclude: Vec<String>,
 }
 
-/// 查询用例集合，通过 case_id 引用原子用例，附加集合级评估指标
+/// 查询用例集合，通过 case_id 引用原子用例，集合整体按 top_k 评估
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RetrieveTestCaseSet {
     pub set_id: String,
     pub description: String,
+    /// 适用的检索策略，空表示全部策略适用
+    #[serde(default)]
+    pub strategies: Vec<RetrieveStrategy>,
     /// 引用的 test_case.case_id
     pub case_ids: Vec<String>,
+    /// 集合整体的期望检索结果（考虑 top_k 合并后）
+    pub expected: ExpectedResult,
     /// 集合级别的最低评估指标
     pub expected_metrics: ExpectedMetrics,
 }
