@@ -4,17 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-anyhow = "1.0.102"
-async-openai = { version = "0.40.2", features = ["_api", "chat-completion"] }
+anyhow = "1.0"
+async-trait = "0.1"
 blake3 = { version = "1.8.5", features = ["serde"] }
 chrono = { version = "0.4.44", features = ["serde"] }
 clap = { version = "4.6.1", features = ["derive"] }
-futures = "0.3.32"
+funera = { git = "https://github.com/dynamder/Funera", features = ["openai"] }
 indicatif = "0.18.4"
 reqwest = { version = "0.13.4", features = ["charset"] }
 reqwest-retry = "0.9.1"
 schemars = { version = "1.2.1", features = ["chrono04"] }
-secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 thiserror = "2.0.18"
@@ -22,4 +21,4 @@ tokio = { version = "1.52.3", features = ["full"] }
 tracing = "0.1.44"
 tracing-indicatif = "0.3.14"
 tracing-subscriber = "0.3.23"
-uuid = { version = "1.23.1", features = ["serde", "v4"] }
+uuid = { version = "1", features = ["serde", "v4"] }

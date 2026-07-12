@@ -1,21 +1,38 @@
+pub mod agents;
 pub mod data_model;
-pub mod extractor;
 pub mod io_src;
-pub mod questioner;
-pub mod scraper;
+pub mod tools;
 
 use std::str::FromStr;
 
 use anyhow::anyhow;
-use async_openai::config::OpenAIConfig;
-use clap::{CommandFactory, Parser};
+use clap::{Args as ClapArgs, CommandFactory, Parser};
 
 use crate::{
-    extractor::Extractor,
+    agents::{ExtractorAgent, QuestionerAgent, ScraperAgent},
     io_src::{InputSource, OutputSource},
-    questioner::{Quest, QuestionArgs, QuestionType, retrieve::RetrieveQuestioner},
-    scraper::Scraper,
 };
+
+#[derive(Debug)]
+enum QuestionType {
+    Retrieve,
+    Consolidate,
+    Forget,
+}
+
+#[derive(Debug, ClapArgs)]
+struct QuestionArgs {
+    #[arg(long)]
+    retrieve: bool,
+    #[arg(long)]
+    consolidate: bool,
+    #[arg(long)]
+    forget: bool,
+    #[arg(long)]
+    query: Option<String>,
+    #[arg(long)]
+    tendency: Option<String>,
+}
 
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
@@ -26,7 +43,6 @@ struct Args {
     #[arg(short, long)]
     scrape: Option<String>,
 
-    /// File path, content string, or "-" for stdin
     #[arg(short, long)]
     extract: Option<String>,
 
@@ -53,25 +69,13 @@ async fn main() -> anyhow::Result<()> {
     let output =
         OutputSource::from_str(&args.output).map_err(|e| anyhow!("Fail to resolve output: {e}"))?;
 
-    let openai_config = if let Some(api_base) = &args.api_base {
-        OpenAIConfig::default()
-            .with_api_base(api_base.clone())
-            .with_api_key(api_key)
-    } else {
-        OpenAIConfig::default().with_api_key(api_key)
-    };
-
-    let scraper = Scraper::new(openai_config.clone());
-    let extractor = Extractor::new(openai_config.clone());
-    let mut retrieve_questioner = RetrieveQuestioner::new(openai_config);
-
     let model = &args.model;
+    let api_base = args.api_base.as_deref();
 
     if let Some(url) = &args.scrape {
         println!("Scraping content from {url}");
 
-        let character_research = scraper
-            .fire(url, model, Some(10))
+        let character_research = ScraperAgent::scrape(&api_key, api_base, model, url, 10)
             .await
             .map_err(|e| anyhow!("Scrape failed: {e}"))?;
 
@@ -90,8 +94,7 @@ async fn main() -> anyhow::Result<()> {
             .resolve()
             .map_err(|e| anyhow!("Fail to resolve input: \n{e}"))?;
 
-        let extracted_data = extractor
-            .extract(&content, model)
+        let extracted_data = ExtractorAgent::extract(&api_key, api_base, model, &content)
             .await
             .map_err(|e| anyhow!("Extract failed: {e}"))?;
 
@@ -131,15 +134,16 @@ async fn main() -> anyhow::Result<()> {
             None
         };
 
-        if let Some(t) = tendency {
-            retrieve_questioner = retrieve_questioner.with_tendency(t.clone());
-        }
-
         match question_mode {
             QuestionType::Retrieve => {
-                let generated_question = retrieve_questioner
-                    .quest(model, query_content.as_deref())
-                    .await?;
+                let generated_question = QuestionerAgent::quest(
+                    &api_key,
+                    api_base,
+                    model,
+                    query_content.as_deref(),
+                    tendency.as_deref(),
+                )
+                .await?;
                 output
                     .write(&serde_json::to_string_pretty(&generated_question)?)
                     .map_err(|e| anyhow!("Fail to write output: {e}"))?;
