@@ -1,5 +1,5 @@
-use funera::{Agent, AgentRuntime};
 use funera::OpenAIProvider;
+use funera::{Agent, AgentEvent, AgentRuntime};
 use schemars::schema_for;
 
 use crate::data_model::extractor::ExtractedInfo;
@@ -26,23 +26,32 @@ impl ExtractorAgent {
             .model(model.to_string())
             .build()?;
 
-        let agent = Agent::builder()
-            .system_prompt(system_prompt)
-            .build();
+        let agent = Agent::builder().system_prompt(system_prompt).build();
 
-        let resp = agent
-            .fire(
+        eprint!("Extracting memory graph");
+        let mut handle = agent
+            .fire_stream(
                 &format!("根据以下角色信息进行提取: \n\n{character_research}"),
                 &runtime,
             )
             .await?;
+
+        while let Some(event) = handle.recv().await {
+            if matches!(event, AgentEvent::Done) {
+                break;
+            }
+            eprint!(".");
+            let _ = std::io::Write::write(&mut std::io::stderr(), b"");
+        }
+        let resp = handle.await?;
+        eprintln!(" done");
 
         let extracted_info = serde_json::from_str::<ExtractedInfo>(&resp.content);
 
         match extracted_info {
             Ok(info) => Ok(info),
             Err(e) => {
-                tracing::warn!("json deserialization failed, try fixing...");
+                eprintln!("JSON parse failed, attempting automatic repair...");
                 let fix_response = Self::try_fix_json(
                     api_key,
                     api_base,
@@ -84,18 +93,24 @@ impl ExtractorAgent {
             .model(model.to_string())
             .build()?;
 
-        let agent = Agent::builder()
-            .system_prompt(fixer_system)
-            .build();
+        let agent = Agent::builder().system_prompt(fixer_system).build();
 
-        let resp = agent
-            .fire(
-                &format!(
-                    "根据以下角色信息和json进行修复: \n\n#角色信息\n{character_research}\n\n#损坏的Json\n{json_str}\n\n#json错误原因\n{de_err}"
-                ),
-                &runtime,
-            )
+        eprint!("Repairing JSON");
+        let mut handle = agent
+            .fire_stream(&format!(
+                "根据以下角色信息和json进行修复: \n\n#角色信息\n{character_research}\n\n#损坏的Json\n{json_str}\n\n#json错误原因\n{de_err}"
+            ), &runtime)
             .await?;
+
+        while let Some(event) = handle.recv().await {
+            if matches!(event, AgentEvent::Done) {
+                break;
+            }
+            eprint!(".");
+            let _ = std::io::Write::write(&mut std::io::stderr(), b"");
+        }
+        let resp = handle.await?;
+        eprintln!(" done");
 
         Ok(resp.content)
     }

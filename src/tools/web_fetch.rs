@@ -55,7 +55,7 @@ impl Tool for WebFetchTool {
             .as_str()
             .ok_or_else(|| ToolCallError::ParameterMismatch(json!({"missing": "url"})))?;
 
-        tracing::info!("fetching {url}");
+        tracing::debug!("fetching {url}");
 
         let request = self.client.get(url).build().map_err(|e| {
             ToolCallError::ToolExecutionError(anyhow::anyhow!("failed to build request: {e}"))

@@ -1,4 +1,4 @@
-use funera::{Agent, AgentRuntime};
+use funera::{Agent, AgentRuntime, AgentEvent};
 use funera::OpenAIProvider;
 use schemars::schema_for;
 
@@ -26,7 +26,17 @@ impl QuestionerAgent {
             .system_prompt(system_prompt)
             .build();
 
-        let resp = agent.fire(&user_msg, &runtime).await?;
+        eprint!("Generating retrieval queries");
+        let mut handle = agent.fire_stream(&user_msg, &runtime).await?;
+        while let Some(event) = handle.recv().await {
+            if matches!(event, AgentEvent::Done) {
+                break;
+            }
+            eprint!(".");
+            let _ = std::io::Write::write(&mut std::io::stderr(), b"");
+        }
+        let resp = handle.await?;
+        eprintln!(" done");
 
         let retrieve_assess_info =
             serde_json::from_str::<RetrieveAssessInfo>(&resp.content);
@@ -34,7 +44,7 @@ impl QuestionerAgent {
         match retrieve_assess_info {
             Ok(info) => Ok(info),
             Err(e) => {
-                tracing::warn!("json deserialization failed, trying fix...");
+                eprintln!("JSON parse failed, attempting automatic repair...");
                 let fix_response = Self::try_fix_json(
                     api_key,
                     api_base,
@@ -125,7 +135,17 @@ impl QuestionerAgent {
             (None, None) => format!("# 损坏的 JSON\n{json_str}\n\n# 错误原因\n{de_err}"),
         };
 
-        let resp = agent.fire(&user_msg, &runtime).await?;
+        eprint!("Repairing JSON");
+        let mut handle = agent.fire_stream(&user_msg, &runtime).await?;
+        while let Some(event) = handle.recv().await {
+            if matches!(event, AgentEvent::Done) {
+                break;
+            }
+            eprint!(".");
+            let _ = std::io::Write::write(&mut std::io::stderr(), b"");
+        }
+        let resp = handle.await?;
+        eprintln!(" done");
 
         Ok(resp.content)
     }

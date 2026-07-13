@@ -1,3 +1,6 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+
 use funera::{Agent, AgentRuntime};
 use funera::OpenAIProvider;
 
@@ -23,8 +26,28 @@ impl ScraperAgent {
             .with_tool_instance(Box::new(WebFetchTool::new()))
             .build()?;
 
+        let turn = Arc::new(AtomicUsize::new(0));
+
         let agent = Agent::builder()
             .system_prompt(system_prompt)
+            .on_turn_start({
+                let turn = turn.clone();
+                move || {
+                    let t = turn.fetch_add(1, Ordering::Relaxed) + 1;
+                    eprint!("\r\x1b[Kscraping... turn {t}/{max_iterations}");
+                }
+            })
+            .on_tool_call({
+                let turn = turn.clone();
+                move |name, args| {
+                    if name == "web_fetch" {
+                        if let Some(url) = args.get("url").and_then(|u| u.as_str()) {
+                            let t = turn.load(Ordering::Relaxed);
+                            eprint!("\r\x1b[Kscraping... turn {t}/{max_iterations} fetching {url}");
+                        }
+                    }
+                }
+            })
             .build();
 
         let resp = agent
@@ -34,6 +57,7 @@ impl ScraperAgent {
             )
             .await?;
 
+        eprintln!();
         Ok(resp.content)
     }
 }
