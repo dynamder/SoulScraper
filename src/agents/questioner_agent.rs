@@ -1,8 +1,11 @@
+use std::path::Path;
+
 use funera::{Agent, AgentRuntime, AgentEvent};
 use funera::OpenAIProvider;
 use schemars::schema_for;
 
 use crate::data_model::questioner::retrieve::RetrieveAssessInfo;
+use crate::util::{format_json_error, strip_markdown_wrapping};
 
 pub struct QuestionerAgent;
 
@@ -13,6 +16,7 @@ impl QuestionerAgent {
         model: &str,
         query: Option<&str>,
         tendency: Option<&str>,
+        debug_dir: Option<&Path>,
     ) -> anyhow::Result<RetrieveAssessInfo> {
         let (system_prompt, user_msg) = Self::prepare_msgs(query, tendency);
 
@@ -38,27 +42,39 @@ impl QuestionerAgent {
         let resp = handle.await?;
         eprintln!(" done");
 
+        let raw_content = strip_markdown_wrapping(&resp.content);
         let retrieve_assess_info =
-            serde_json::from_str::<RetrieveAssessInfo>(&resp.content);
+            serde_json::from_str::<RetrieveAssessInfo>(&raw_content);
 
         match retrieve_assess_info {
             Ok(info) => Ok(info),
             Err(e) => {
-                eprintln!("JSON parse failed, attempting automatic repair...");
+                let error_detail = format_json_error(&raw_content, &e);
+                eprintln!("\nJSON parse failed.\n{error_detail}\nAttempting automatic repair...");
+
+                Self::save_debug_file(debug_dir, "raw_failed_question.json", &raw_content);
+
                 let fix_response = Self::try_fix_json(
                     api_key,
                     api_base,
                     model,
-                    &resp.content,
+                    &raw_content,
                     query,
                     tendency,
-                    e,
+                    &error_detail,
                 )
                 .await?;
+
                 serde_json::from_str::<RetrieveAssessInfo>(&fix_response).map_err(
                     |fatal_err| {
+                        let fatal_detail = format_json_error(&fix_response, &fatal_err);
+                        Self::save_debug_file(
+                            debug_dir,
+                            "raw_failed_question_fix.json",
+                            &fix_response,
+                        );
                         tracing::error!(
-                            "fatal error in deserialization after fix. received:\n{fix_response}"
+                            "fatal error in deserialization after fix.\noriginal:\n{error_detail}\n\nfix:\n{fatal_detail}"
                         );
                         fatal_err.into()
                     },
@@ -97,7 +113,7 @@ impl QuestionerAgent {
         json_str: &str,
         query: Option<&str>,
         tendency: Option<&str>,
-        de_err: serde_json::Error,
+        error_detail: &str,
     ) -> anyhow::Result<String> {
         let fixer_head = "你是一个 JSON 修复助手。以下 JSON 解析失败，请根据错误信息和原始上下文修复它，使其符合要求的 Schema。仅输出修复后的 JSON，不包含任何解释。";
         let info_schema = schema_for!(RetrieveAssessInfo);
@@ -119,20 +135,20 @@ impl QuestionerAgent {
         let user_msg = match (query, tendency) {
             (Some(q), Some(t)) => {
                 format!(
-                    "角色记忆图谱:\n{q}\n\n生成倾向:\n{t}\n\n# 损坏的 JSON\n{json_str}\n\n# 错误原因\n{de_err}"
+                    "角色记忆图谱:\n{q}\n\n生成倾向:\n{t}\n\n# 损坏的 JSON\n{json_str}\n\n# JSON 错误原因\n{error_detail}"
                 )
             }
             (Some(q), None) => {
                 format!(
-                    "角色记忆图谱:\n{q}\n\n# 损坏的 JSON\n{json_str}\n\n# 错误原因\n{de_err}"
+                    "角色记忆图谱:\n{q}\n\n# 损坏的 JSON\n{json_str}\n\n# JSON 错误原因\n{error_detail}"
                 )
             }
             (None, Some(t)) => {
                 format!(
-                    "生成倾向:\n{t}\n\n# 损坏的 JSON\n{json_str}\n\n# 错误原因\n{de_err}"
+                    "生成倾向:\n{t}\n\n# 损坏的 JSON\n{json_str}\n\n# JSON 错误原因\n{error_detail}"
                 )
             }
-            (None, None) => format!("# 损坏的 JSON\n{json_str}\n\n# 错误原因\n{de_err}"),
+            (None, None) => format!("# 损坏的 JSON\n{json_str}\n\n# JSON 错误原因\n{error_detail}"),
         };
 
         eprint!("Repairing JSON");
@@ -148,5 +164,19 @@ impl QuestionerAgent {
         eprintln!(" done");
 
         Ok(resp.content)
+    }
+
+    fn save_debug_file(debug_dir: Option<&Path>, filename: &str, content: &str) {
+        match debug_dir {
+            Some(dir) => {
+                let path = dir.join(filename);
+                let _ = std::fs::write(&path, content);
+                eprintln!("  detail saved to {}", path.display());
+            }
+            None => {
+                let _ = std::fs::write(filename, content);
+                eprintln!("  detail saved to ./{filename}");
+            }
+        }
     }
 }

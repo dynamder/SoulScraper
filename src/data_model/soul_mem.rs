@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::data_model::soul_mem::{
     proc::{ProcMemLink, ProcMemory},
     sem::{SemMemLink, SemMemory},
-    sit::SituationType,
+    sit::{SituationMemLink, SituationType},
 };
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Hash, Serialize, Deserialize)]
@@ -68,11 +68,10 @@ pub struct MemoryLink {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[schemars(tag = "link_kind")]
-#[serde(tag = "link_kind")]
 pub enum MemoryLinkType {
     Proc(ProcMemLink),
     Sem(SemMemLink),
+    Situation(SituationMemLink),
 }
 
 impl MemoryLink {
@@ -172,8 +171,6 @@ impl MemoryNote {
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize, JsonSchema)]
-#[schemars(tag = "mem_kind")]
-#[serde(tag = "mem_kind")]
 pub enum MemoryType {
     Semantic(SemMemory),
     Situation(SituationType),

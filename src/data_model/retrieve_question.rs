@@ -1,125 +1,119 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::data_model::extractor::ExtractedInfo;
-use crate::data_model::questioner::retrieve::{ExpectedResult, PrioritizedRetrieveQuery};
+use crate::data_model::questioner::retrieve::RetrieveQueryVariant;
 
-/// 检索策略，控制测试用例适用哪个检索算法
+/// 检索测试用例文件（RetrQueryFileRaw）— 顶层结构
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum RetrieveStrategy {
-    Similarity,
-    Association,
-}
-
-/// 检索功能的测试数据：包含记忆图谱、原子查询用例及查询集合
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct RetrieveTestData {
-    /// 元信息
-    pub meta: TestMeta,
-
-    /// 对 mem_graph（序列化后的 ExtractedInfo）的 BLAKE3 哈希，用于验证图谱完整性
-    pub mem_graph_blake3: String,
-
-    pub mem_graph_source: MemGraphSource,
-
-    /// 内嵌的记忆图谱（当 source 为 inline 时使用）
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub mem_graph: Option<ExtractedInfo>,
-
-    /// 原子检索测试用例
-    pub test_cases: Vec<RetrieveTestCase>,
-
-    /// 查询用例集合
-    pub test_case_sets: Vec<RetrieveTestCaseSet>,
-}
-
-impl RetrieveTestData {
-    /// 计算 ExtractedInfo 的 BLAKE3 哈希（hex），用于生成或验证
-    pub fn compute_mem_graph_hash(graph: &ExtractedInfo) -> String {
-        let bytes = serde_json::to_vec(graph).expect("ExtractedInfo serialization failed.");
-        blake3::hash(&bytes).to_hex().to_string()
-    }
-
-    /// 验证内嵌图谱的哈希完整性
-    pub fn verify_graph_integrity(&self) -> Result<(), String> {
-        if let Some(ref graph) = self.mem_graph {
-            let actual = Self::compute_mem_graph_hash(graph);
-            if actual != self.mem_graph_blake3 {
-                return Err(format!(
-                    "hash mismatch: expected {expected}, got {actual}",
-                    expected = self.mem_graph_blake3,
-                    actual = actual
-                ));
-            }
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct TestMeta {
+pub struct RetrQueryFileRaw {
+    /// 测试套件名称
     pub name: String,
+    /// 描述
     pub description: String,
-    /// 测试数据对应的角色名称
-    pub character: String,
-    pub version: String,
+    /// 指向 Graph JSON 的相对路径（相对于 query JSON 所在目录）
+    pub graph_path: String,
+    /// 检索执行配置
+    pub config: TestConfigRaw,
+    /// 权重调参配置（可选，不写则使用默认值 0.4/0.6）
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub blend_sweep: Option<BlendSweepRaw>,
+    /// 测试用例列表
+    pub test_cases: Vec<TestCaseQueryRaw>,
 }
 
+/// 检索执行配置
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum MemGraphSource {
-    /// 图谱直接嵌入在 JSON 中
-    Inline,
-    /// 图谱引用外部文件路径
-    File(String),
+pub struct TestConfigRaw {
+    /// 相似度最低阈值
+    pub similarity_threshold: f32,
+    /// 每次搜索最大返回数
+    pub max_results: usize,
+    /// 评估 k 值列表
+    pub test_k_values: Vec<usize>,
 }
 
-/// 原子检索测试用例
+/// 权重调参配置
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct RetrieveTestCase {
-    /// 唯一标识
-    pub case_id: String,
+pub struct BlendSweepRaw {
+    /// 快捷扫 tag 权重（生成 pairs: (tag, 1.0-tag)）
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub tag_sweep: Option<Vec<f64>>,
+    /// 显式权重对列表（与 tag_sweep 互斥，pairs 优先）
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub pairs: Option<Vec<BlendPairRaw>>,
+}
+
+/// 单个权重对
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BlendPairRaw {
+    pub tag: f64,
+    pub variant: f64,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sem_concept: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sem_description: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sem_concept_main: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sem_concept_aliases: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sit_location_name: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sit_location_coord: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sit_participant_name: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sit_participant_role: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sit_env_atmosphere: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sit_env_tone: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sit_event_initiator: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sit_event_target: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sit_event_action: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sit_event_initiator_only_action: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sit_event_target_only_action: Option<f64>,
+}
+
+/// 单个测试用例
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TestCaseQueryRaw {
+    /// 用例名称
+    pub name: String,
     /// 用例描述
     pub description: String,
-    /// 原始自然语言问题（作为 LLM 输入）
-    pub natural_query: String,
-    /// 适用的检索策略，空表示全部策略适用
+    /// 子查询列表
+    pub sub_queries: Vec<SubQuery>,
+    /// 每个子查询的期望结果（按 sub_queries 数组下标）
+    pub expected_per_query: Vec<PerQueryExpectation>,
+    /// 所有子查询按优先级加权合并后的期望排序结果
+    pub expected_combined_ranking: Vec<String>,
+    /// 动作节点期望（当前检索阶段填空数组）
     #[serde(default)]
-    pub strategies: Vec<RetrieveStrategy>,
-    /// 期望 LLM 生成的结构化检索查询列表
-    pub retrieve_queries: Vec<PrioritizedRetrieveQuery>,
-    /// 期望的检索结果
-    pub expected: ExpectedResult,
+    pub expected_actions: Vec<String>,
 }
 
-/// 查询用例集合，通过 case_id 引用原子用例，集合整体按 top_k 评估
+/// 单个子查询
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct RetrieveTestCaseSet {
-    pub set_id: String,
-    pub description: String,
-    /// 适用的检索策略，空表示全部策略适用
-    #[serde(default)]
-    pub strategies: Vec<RetrieveStrategy>,
-    /// 引用的 test_case.case_id
-    pub case_ids: Vec<String>,
-    /// 集合整体的期望检索结果（考虑 top_k 合并后）
-    pub expected: ExpectedResult,
-    /// 集合级别的最低评估指标
-    pub expected_metrics: ExpectedMetrics,
+pub struct SubQuery {
+    /// 优先级（越大越重要）
+    pub priority: u32,
+    /// 标签数组
+    pub tag: Vec<String>,
+    /// 查询变体（二选一：Semantic 或 Situation）
+    pub variant: RetrieveQueryVariant,
 }
 
+/// 子查询期望结果
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ExpectedMetrics {
-    #[serde(default)]
-    pub min_recall: Option<f64>,
-
-    #[serde(default)]
-    pub min_precision: Option<f64>,
-
-    #[serde(default)]
-    pub min_precision_at_5: Option<f64>,
-
-    #[serde(default)]
-    pub min_mrr: Option<f64>,
+pub struct PerQueryExpectation {
+    /// 对应 sub_queries 数组下标
+    pub q: usize,
+    /// 期望的节点 ID 排序（按相关度降序）
+    pub ranking: Vec<String>,
 }

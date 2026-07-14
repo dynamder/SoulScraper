@@ -1,8 +1,11 @@
+use std::path::Path;
+
 use funera::OpenAIProvider;
 use funera::{Agent, AgentEvent, AgentRuntime};
 use schemars::schema_for;
 
-use crate::data_model::extractor::ExtractedInfo;
+use crate::data_model::extractor::GraphNodeList;
+use crate::util::{format_json_error, strip_markdown_wrapping};
 
 pub struct ExtractorAgent;
 
@@ -12,12 +15,13 @@ impl ExtractorAgent {
         api_base: Option<&str>,
         model: &str,
         character_research: &str,
-    ) -> anyhow::Result<ExtractedInfo> {
+        debug_dir: Option<&Path>,
+    ) -> anyhow::Result<GraphNodeList> {
         let system_prompt_head = include_str!("../prompt_template/extractor_system");
-        let info_schema = schema_for!(ExtractedInfo);
+        let node_schema = schema_for!(GraphNodeList);
         let system_prompt = format!(
             "{system_prompt_head}\n\n{}",
-            serde_json::to_string_pretty(&info_schema).unwrap()
+            serde_json::to_string_pretty(&node_schema).unwrap()
         );
 
         let runtime = AgentRuntime::<OpenAIProvider>::builder()
@@ -46,25 +50,36 @@ impl ExtractorAgent {
         let resp = handle.await?;
         eprintln!(" done");
 
-        let extracted_info = serde_json::from_str::<ExtractedInfo>(&resp.content);
+        let raw_content = strip_markdown_wrapping(&resp.content);
+        let nodes = serde_json::from_str::<GraphNodeList>(&raw_content);
 
-        match extracted_info {
-            Ok(info) => Ok(info),
+        match nodes {
+            Ok(nodes) => Ok(nodes),
             Err(e) => {
-                eprintln!("JSON parse failed, attempting automatic repair...");
+                let error_detail = format_json_error(&raw_content, &e);
+                eprintln!("\nJSON parse failed.\n{error_detail}\nAttempting automatic repair...");
+
+                Self::save_debug_file(debug_dir, "raw_failed_extract.json", &raw_content);
+
                 let fix_response = Self::try_fix_json(
                     api_key,
                     api_base,
                     model,
-                    &resp.content,
+                    &raw_content,
                     character_research,
-                    e,
+                    &error_detail,
                 )
                 .await?;
-                serde_json::from_str::<ExtractedInfo>(&fix_response).map_err(|fatal_err| {
-                    let _ = std::fs::write("raw_response_debug.json", &fix_response);
+
+                serde_json::from_str::<GraphNodeList>(&fix_response).map_err(|fatal_err| {
+                    let fatal_detail = format_json_error(&fix_response, &fatal_err);
+                    Self::save_debug_file(
+                        debug_dir,
+                        "raw_failed_extract_fix.json",
+                        &fix_response,
+                    );
                     tracing::error!(
-                        "fatal error in info deserialization after trying fix. received: \n {fix_response}"
+                        "fatal error in info deserialization after trying fix.\noriginal:\n{error_detail}\n\nfix:\n{fatal_detail}"
                     );
                     fatal_err.into()
                 })
@@ -78,13 +93,13 @@ impl ExtractorAgent {
         model: &str,
         json_str: &str,
         character_research: &str,
-        de_err: serde_json::Error,
+        error_detail: &str,
     ) -> anyhow::Result<String> {
         let fixer_system_head = include_str!("../prompt_template/extractor_fix_system");
-        let info_schema = schema_for!(ExtractedInfo);
+        let node_schema = schema_for!(GraphNodeList);
         let fixer_system = format!(
             "{fixer_system_head}\n{}",
-            serde_json::to_string_pretty(&info_schema).unwrap()
+            serde_json::to_string_pretty(&node_schema).unwrap()
         );
 
         let runtime = AgentRuntime::<OpenAIProvider>::builder()
@@ -98,7 +113,7 @@ impl ExtractorAgent {
         eprint!("Repairing JSON");
         let mut handle = agent
             .fire_stream(&format!(
-                "根据以下角色信息和json进行修复: \n\n#角色信息\n{character_research}\n\n#损坏的Json\n{json_str}\n\n#json错误原因\n{de_err}"
+                "根据以下角色信息和json进行修复: \n\n#角色信息\n{character_research}\n\n#损坏的Json\n{json_str}\n\n#json错误原因\n{error_detail}"
             ), &runtime)
             .await?;
 
@@ -113,5 +128,19 @@ impl ExtractorAgent {
         eprintln!(" done");
 
         Ok(resp.content)
+    }
+
+    fn save_debug_file(debug_dir: Option<&Path>, filename: &str, content: &str) {
+        match debug_dir {
+            Some(dir) => {
+                let path = dir.join(filename);
+                let _ = std::fs::write(&path, content);
+                eprintln!("  detail saved to {}", path.display());
+            }
+            None => {
+                let _ = std::fs::write(filename, content);
+                eprintln!("  detail saved to ./{filename}");
+            }
+        }
     }
 }

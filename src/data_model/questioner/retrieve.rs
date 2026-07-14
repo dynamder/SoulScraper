@@ -39,27 +39,21 @@ pub struct ExpectedResult {
 pub struct PrioritizedRetrieveQuery {
     pub priority: u32,
 
-    #[serde(flatten)]
-    pub query: RetrieveQuery,
+    /// 标签数组，决定 embedding 中 tag 部分的向量
+    pub tag: Vec<String>,
+
+    /// 查询变体（语义/情境）
+    pub variant: RetrieveQueryVariant,
 
     /// 期望的检索结果
     #[serde(default)]
     pub expected: ExpectedResult,
 }
 
-/// 单个检索查询：统一标签 + 查询变体（语义/情境）
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct RetrieveQuery {
-    /// 标签，决定 embedding 中 tag 部分的向量
-    pub tags: Vec<String>,
-    pub variant: RetrieveQueryVariant,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "variant_kind")]
 pub enum RetrieveQueryVariant {
-    Semantic { units: Vec<SemanticQueryUnit> },
-    Situation { units: Vec<SituationQueryUnit> },
+    Semantic(Vec<SemanticQueryUnit>),
+    Situation(Vec<SituationQueryUnit>),
 }
 
 // ── 语义查询子结构 ──
@@ -67,8 +61,8 @@ pub enum RetrieveQueryVariant {
 /// 一个语义查询单元代表一个概念或实体
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SemanticQueryUnit {
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub concept_identifier: Option<String>,
+    /// 概念标识符，必填，用于与 SemMemory.content 语义比较
+    pub concept_identifier: String,
 
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub description: Option<String>,

@@ -47,30 +47,32 @@
 ## 查询难度梯度
 
 **简单**（可直接定位）：concept_identifier 使用口语化指代，description 提供辅助
-**中等**（需语义匹配）：concept_identifier 留空或很模糊，纯靠 description 检索
-**困难**（跨节点关联）：涉及两个以上概念/事件的关系，如"孤儿院那个负责人和她之间是什么样的感情"
+**中等**（需语义匹配）：concept_identifier 用模糊口语化指代，纯靠 description 检索
+**困难**（跨节点关联）：涉及两个以上概念/事件的关系，如"孤儿院那个负责人和她之间的感情"
 
 ## 各类变体填充规则
 
 ### Semantic 变体
-- concept_identifier：**不要直接复制节点 content 或 alias**。用口语化指代。困难查询可留空。
+- concept_identifier（必填）：**不要直接复制节点 content 或 alias**。用口语化指代。
 - description：自然语言描述用户想问什么，不要复制节点 description。如"想知道她小时候在孤儿院过得怎么样"。
 
 ### Situation 变体
 - narrative：模糊口语化概括，**不要精确复述**。如"好像有一次她为了救谁参加了一个很危险的实验"。
 - 适当留空 location/participants/event 增加难度。不要所有字段都填满。
 - 即使填写 participants，也要用模糊指代："那个最重要的人""一个凶巴巴的小孩"。
+- **Semantic 与 Situation 变体各约 50%**，Situation 占比必须在 35%~65% 之间。生成后自行核算，如果 Situation 低于 35% 或高于 65%，删除部分 Semantic 或 Situation 查询以平衡比例。
 
 ### 优先级
 - 核心人物/事件：8-10
 - 次要关系/能力：5-7
 - 习惯/背景补充：3-5
-- 分布要均匀，不要全给 8-10
+- **各档约 1/3**：高优(8-10)、中优(5-7)、低优(3-5)各约 1/3，**任意一档占比不得超过 50%**。生成后自行核算：低优 + 中优之和不得低于 40%。不要全给 8-10
 
 ### 标签
 - 概括性、可复用标签（"人物""事件""关系""能力""习惯""地点"）
 - 不要为每个查询创建独特标签
 - 优先使用图谱中的已有标签
+- **统一使用中文标签**，不要出现英文标签（如不要用 "characters" 要用 "人物"）
 
 ## 查询集合示例
 
@@ -81,12 +83,12 @@
   "set_id": "set_bronya",
   "description": "查询希儿最重要的人",
   "queries": [
-    {"priority": 9, "tags": ["人物"], "variant": {"variant_kind": "Semantic", "units": [{"concept_identifier": "她的姐姐大人", "description": "那个在孤儿院一直保护她的银发女生"}]}},
-    {"priority": 9, "tags": ["人物"], "variant": {"variant_kind": "Semantic", "units": [{"description": "从小一起长大，骑摩托车带她去看海的那个人"}]}},
-    {"priority": 9, "tags": ["人物"], "variant": {"variant_kind": "Semantic", "units": [{"concept_identifier": "布洛妮娅", "description": "和她有很深羁绊的那个冷酷又温柔的人"}]}},
-    {"priority": 9, "tags": ["人物"], "variant": {"variant_kind": "Semantic", "units": [{"description": "那个为了救她失去了笑容和行走能力的人"}]}},
-    {"priority": 9, "tags": ["人物"], "variant": {"variant_kind": "Semantic", "units": [{"concept_identifier": "理之律者", "description": "她最重要的人后来成为了那个拥有理之律者力量的战士"}]}},
-    {"priority": 9, "tags": ["人物", "关系"], "variant": {"variant_kind": "Semantic", "units": [{"concept_identifier": "姐姐大人", "description": "她一直这样称呼那个把她从黑暗中救出来的人"}]}}
+    {"priority": 9, "tag": ["人物"], "variant": {"Semantic": [{"concept_identifier": "她的姐姐大人", "description": "那个在孤儿院一直保护她的银发女生"}]}},
+    {"priority": 9, "tag": ["人物"], "variant": {"Semantic": [{"concept_identifier": "保护者", "description": "从小一起长大，骑摩托车带她去看海的那个人"}]}},
+    {"priority": 9, "tag": ["人物"], "variant": {"Semantic": [{"concept_identifier": "布洛妮娅", "description": "和她有很深羁绊的那个冷酷又温柔的人"}]}},
+    {"priority": 9, "tag": ["人物"], "variant": {"Semantic": [{"concept_identifier": "失去笑容的人", "description": "那个为了救她失去了笑容和行走能力的人"}]}},
+    {"priority": 9, "tag": ["人物"], "variant": {"Semantic": [{"concept_identifier": "理之律者", "description": "她最重要的人后来成为了那个拥有理之律者力量的战士"}]}},
+    {"priority": 9, "tag": ["人物", "关系"], "variant": {"Semantic": [{"concept_identifier": "姐姐大人", "description": "她一直这样称呼那个把她从黑暗中救出来的人"}]}}
   ]
 }
 ```
@@ -120,5 +122,11 @@
 
 示例：
 ```json
-{"priority": 9, "tags": ["人物"], "expected": {"must_include": ["sem_bronya"], "may_include": ["sem_self"]}, "variant": {"variant_kind": "Semantic", "units": [{"concept_identifier": "她的姐姐大人", "description": "那个在孤儿院一直保护她的银发女生"}]}}
+{"priority": 9, "tag": ["人物"], "expected": {"must_include": ["sem_bronya"], "may_include": ["sem_self"]}, "variant": {"Semantic": [{"concept_identifier": "她的姐姐大人", "description": "那个在孤儿院一直保护她的银发女生"}]}}
 ```
+
+## 查询文本撰写规范
+- **禁止使用疑问句**：不要写"她是谁？""这是什么？"，改为"红魔馆的女仆长"或"描述她的时间操控能力"
+- **禁止语气词和关系连接词**：不要写"你能告诉我关于""我想知道""请问"等
+- **使用实体描述或短陈述句**：如"操控时间的能力""红魔馆那位年幼的吸血鬼大小姐"
+- 即使 Variant 描述较长，也应保持陈述语气，如"那个为了救她而失去笑容和行走能力的人"而不是"谁为了救她失去了什么"

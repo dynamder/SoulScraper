@@ -3,8 +3,6 @@ use serde::{Deserialize, Serialize};
 
 ///动作类型
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone, Serialize, Deserialize, JsonSchema)]
-#[schemars(tag = "action_kind")]
-#[serde(tag = "action_kind")]
 pub enum ActionType {
     ///语气类，说话方式
     Speak,

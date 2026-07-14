@@ -4,8 +4,6 @@ use serde::{Deserialize, Serialize};
 
 //一种抽象性情景记忆、一种具体性情景记忆
 #[derive(Debug, PartialEq, PartialOrd, Clone, Serialize, Deserialize, JsonSchema)]
-#[schemars(tag = "sit_kind")]
-#[serde(tag = "sit_kind")]
 pub enum SituationType {
     ///抽象性的情景记忆（地点、人物、情境、事件）
     AbstractSituation(AbstractSituation),
@@ -26,8 +24,6 @@ impl From<SpecificSituation> for SituationType {
 
 ///抽象性情景记忆（地点、人物、情境、事件）
 #[derive(Debug, PartialEq, PartialOrd, Clone, Serialize, Deserialize, JsonSchema)]
-#[schemars(tag = "abstract_kind")]
-#[serde(tag = "abstract_kind")]
 pub enum AbstractSituation {
     Location(Location),
     Participant(Participant),
@@ -59,13 +55,14 @@ impl From<Event> for AbstractSituation {
 ///具体性情景记忆
 #[derive(Debug, PartialEq, PartialOrd, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SpecificSituation {
-    narrative: String,
-    time_span: DateTime<Utc>,
-    context: Context,
+    pub narrative: String,
+    #[serde(default)]
+    pub time_span: Option<DateTime<Utc>>,
+    pub context: Context,
 }
 
 impl SpecificSituation {
-    pub fn new(narrative: String, time_span: DateTime<Utc>, context: Context) -> Self {
+    pub fn new(narrative: String, time_span: Option<DateTime<Utc>>, context: Context) -> Self {
         SpecificSituation {
             narrative,
             time_span,
@@ -78,10 +75,10 @@ impl SpecificSituation {
     pub fn get_mut_narrative(&mut self) -> &mut String {
         &mut self.narrative
     }
-    pub fn get_time_span(&self) -> &DateTime<Utc> {
+    pub fn get_time_span(&self) -> &Option<DateTime<Utc>> {
         &self.time_span
     }
-    pub fn get_mut_time_span(&mut self) -> &mut DateTime<Utc> {
+    pub fn get_mut_time_span(&mut self) -> &mut Option<DateTime<Utc>> {
         &mut self.time_span
     }
     pub fn get_context(&self) -> &Context {
@@ -221,13 +218,13 @@ pub struct SensoryData {
 }
 
 ///情境记忆链接
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub enum SituationMemLink {
     AbstractToSpecific(AbstractToSpecific),
 }
 
 ///抽象到具体的链接
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct AbstractToSpecific {}
 impl AbstractToSpecific {
     pub fn new() -> Self {

@@ -7,71 +7,64 @@ use crate::data_model::soul_mem::{
     MemoryLink, MemoryLinkType, MemoryNote, MemoryNoteBuilder, MemoryType,
 };
 
+/// LLM 输出：记忆图节点数组（GraphNodeRaw[]）
+pub type GraphNodeList = Vec<GraphNode>;
+
+/// 单个记忆图节点
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ExtractedNode {
-    pub node_id: String,
+pub struct GraphNode {
+    /// 全局唯一可读 ID
+    pub id: String,
+    /// 标签，参与 embedding 计算
     pub tags: Vec<String>,
+    /// 记忆类型（Semantic / Situation / Procedure）
     pub mem_type: MemoryType,
-}
-impl From<ExtractedNode> for MemoryNote {
-    fn from(value: ExtractedNode) -> Self {
-        MemoryNoteBuilder::new(value.mem_type)
-            .tags(value.tags)
-            .build()
-            .unwrap()
-    }
+    /// 关联边，默认为空
+    #[serde(default)]
+    pub mem_links: Vec<GraphLink>,
 }
 
+/// 记忆图边
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ExtractedLink {
-    pub link_id: String,
-    pub source_id: String,
-    pub target_id: String,
-
-    ///记忆链接强度，0~1
+pub struct GraphLink {
+    /// 源节点 ID
+    pub from: String,
+    /// 目标节点 ID
+    pub to: String,
+    /// 关联强度 0~1
     pub intensity: f64,
+    /// 边类型（Sem / Proc / Situation）
     pub link_type: MemoryLinkType,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ExtractedGraph {
-    pub nodes: Vec<ExtractedNode>,
-    pub links: Vec<ExtractedLink>,
-}
+pub fn graph_node_list_to_memory_notes(nodes: GraphNodeList) -> Vec<MemoryNote> {
+    let mut id_map: HashMap<String, crate::data_model::soul_mem::MemoryId> = HashMap::new();
+    let mut nodes_map: HashMap<crate::data_model::soul_mem::MemoryId, MemoryNote> = HashMap::new();
 
-impl From<ExtractedGraph> for Vec<MemoryNote> {
-    fn from(value: ExtractedGraph) -> Self {
-        let mut id_map = HashMap::new();
-        let ExtractedGraph { nodes, links } = value;
+    // 第一遍：创建所有 MemoryNote，建立 ID 映射
+    for node in &nodes {
+        let mem_note = MemoryNoteBuilder::new(node.mem_type.clone())
+            .tags(node.tags.clone())
+            .build()
+            .unwrap();
+        id_map.insert(node.id.clone(), mem_note.id());
+        nodes_map.insert(mem_note.id(), mem_note);
+    }
 
-        let mut nodes_map = HashMap::new();
-        for node in nodes {
-            let string_id = node.node_id.clone();
-            let mem_note = MemoryNote::from(node);
-            id_map.insert(string_id, mem_note.id());
-            nodes_map.insert(mem_note.id(), mem_note);
-        }
-
-        for link in links {
-            let source_id = id_map[&link.source_id];
-            let target_id = id_map[&link.target_id];
-
-            let mut mem_link = MemoryLink::new(source_id, target_id, link.link_type);
+    // 第二遍：添加边
+    for node in &nodes {
+        let source_id = id_map.get(&node.id).expect("node id must exist in id_map");
+        for link in &node.mem_links {
+            let target_id = id_map
+                .get(&link.to)
+                .expect("link target id must exist in id_map");
+            let mut mem_link = MemoryLink::new(*source_id, *target_id, link.link_type.clone());
             mem_link.intensity = link.intensity;
-
             nodes_map
-                .get_mut(&source_id)
+                .get_mut(source_id)
                 .map(|note| note.add_link(mem_link));
         }
-
-        nodes_map.into_iter().map(|(_, note)| note).collect()
     }
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ExtractedInfo {
-    pub graph: ExtractedGraph,
-
-    ///简要描述角色的特征，重要经历，重要人物关系
-    pub summary: String,
+    nodes_map.into_values().collect()
 }
