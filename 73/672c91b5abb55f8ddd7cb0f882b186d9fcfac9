@@ -1,0 +1,92 @@
+src/data_model/questioner/retrieve.rs
+  s_a29d7202c346d5::t_b045e48e480b7d 42-46,55-56,64-65,139
+src/prompt_template/questioner/retrieve_system
+  s_a29d7202c346d5::t_b73092562d2d29 50-51
+  s_a29d7202c346d5::t_69c91f433639e0 63
+  s_a29d7202c346d5::t_ab6f789b33d28c 69
+  s_a29d7202c346d5::t_ed3d93f910b9f2 75
+  s_a29d7202c346d5::t_b283ac25e8b2a5 125,127-132
+  s_a29d7202c346d5::t_e607260cc5f3d7 56
+  s_a29d7202c346d5::t_85129c67adbcc2 86-91
+src/util.rs
+  s_a29d7202c346d5::t_8075e3f9fea98d 28-43
+  s_a29d7202c346d5::t_0d24a85c3f5921 1-27,64-78
+  s_a29d7202c346d5::t_04089ad0f0005d 44-63
+src/prompt_template/extractor_fix_system
+  s_a29d7202c346d5::t_5a283aca46f0f6 8,10
+  s_a29d7202c346d5::t_8add5eb1a5d751 7
+  s_a29d7202c346d5::t_173ecac2fc6cc6 22-23
+  s_a29d7202c346d5::t_ae5b0d20041e15 29
+src/main.rs
+  s_a29d7202c346d5::t_31b7f9a4582473 97-103,108-115,118-141,144-150
+  s_a29d7202c346d5::t_045f55707b4fb7 143
+  s_a29d7202c346d5::t_f377bac69087b0 227-232
+  s_a29d7202c346d5::t_9e599174f0d862 142
+  s_a29d7202c346d5::t_7732c25e45ff27 15
+  s_a29d7202c346d5::t_1453f8df2b6a1b 265-285,287
+  s_a29d7202c346d5::t_1a5a941873351d 2
+  s_a29d7202c346d5::t_90e98f0ec20fa3 21
+  s_a29d7202c346d5::t_7cb9e0539f0ee6 164-178
+  s_a29d7202c346d5::t_3127afbcb52fcd 208
+  s_a29d7202c346d5::t_e0d3fae5ebd708 179-185
+  s_a29d7202c346d5::t_ed11c1b1579e86 78,80-89
+  s_a29d7202c346d5::t_2a03e1a33b7d5b 6
+  s_a29d7202c346d5::t_3c19582acedd6e 262
+  s_a29d7202c346d5::t_c7e75731cecee8 91
+  s_a29d7202c346d5::t_00884d6fef5c33 16-19,43-60
+  s_a29d7202c346d5::t_4333c8627e7030 104-107,116-117
+  s_a29d7202c346d5::t_042e1ce2e506ca 90
+src/data_model/extractor.rs
+  s_a29d7202c346d5::t_0fc3ef96946e79 61
+  s_a29d7202c346d5::t_d201eb27c1f173 10-13,15-18,20,22-24,27,29-34,36
+  s_a29d7202c346d5::t_65c48a1395f521 40-42,44-52,54-60,64,69
+src/prompt_template/extractor_system
+  s_a29d7202c346d5::t_e14d8fcf2d6dd2 8
+  s_a29d7202c346d5::t_7b18a61f5d55bc 38
+  s_a29d7202c346d5::t_e1e11e683f8e8e 20-21
+  s_a29d7202c346d5::t_1fed07911fa5a9 6
+  s_a29d7202c346d5::t_9c3b1b4cd5d69b 27
+  s_a29d7202c346d5::t_3afa599c901415 2
+  s_a29d7202c346d5::t_4e5f7bade442f4 5
+src/batch.rs
+  s_a29d7202c346d5::t_732a0b1a7d7c5f 1-159,161-165,167-177,179-207,209-224,229-236,239-261,263-281,296-343
+  s_a29d7202c346d5::t_2f642bc0ec247c 160
+  s_a29d7202c346d5::t_057a6c946931c9 208
+  s_a29d7202c346d5::t_921b7767617438 225-228,237-238,262
+  s_a29d7202c346d5::t_b16ea3318eb169 178
+  s_a29d7202c346d5::t_0bc71a9622bd5c 166
+  s_a29d7202c346d5::t_7b3d1bb08a4e26 282-295
+src/agents/questioner_agent.rs
+  s_a29d7202c346d5::t_40abfb52c4a176 45,47,52,55
+  s_a29d7202c346d5::t_7b6c928da54805 1-2,19,53-54,56,64,67,70-75,77,116,138,143,148,151,168-180
+  s_a29d7202c346d5::t_0f1499308f9dd3 61
+  s_a29d7202c346d5::t_131ec3936de0f5 8
+  s_a29d7202c346d5::t_91b2a7f74b64aa 181
+src/agents/extractor_agent.rs
+  s_a29d7202c346d5::t_3c9044a2622a16 1-2
+  s_a29d7202c346d5::t_8cbd2da1c06c18 53
+  s_a29d7202c346d5::t_374d48fd1fcc91 18,60-61,63,70,73,75-80,82,96,116,132-144
+  s_a29d7202c346d5::t_8f0e337d33bc19 59,62,68
+  s_a29d7202c346d5::t_e0f9728c3cd916 8
+  s_a29d7202c346d5::t_699b70e51e4310 7,19,21,24,56-57,74,99,102
+  s_a29d7202c346d5::t_99c90d221acb13 54
+  s_a29d7202c346d5::t_f354ea49cfcc50 145
+src/data_model/retrieve_question.rs
+  s_a29d7202c346d5::t_81fc4b7e44c07b 4,6,8-17,19-21,24-32,35,37-43,46,48-80,83,85-87,90-96,98,101,103-109,112,114-118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "73672c91b5abb55f8ddd7cb0f882b186d9fcfac9",
+  "prompts": {},
+  "sessions": {
+    "s_a29d7202c346d5": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0a154aeb0ffeK6nCGqlHWxxC3k",
+        "model": "unknown"
+      },
+      "human_author": "dynamder <igaster@163.com>"
+    }
+  }
+}
