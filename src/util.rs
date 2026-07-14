@@ -61,6 +61,76 @@ pub fn strip_markdown_wrapping(raw: &str) -> String {
     }
 }
 
+/// 修复 LLM 输出中已知的 JSON 格式错误，使 serde 能正常解析
+pub fn sanitize_json(raw: &str) -> String {
+    let mut v: serde_json::Value = match serde_json::from_str(raw) {
+        Ok(v) => v,
+        Err(_) => return raw.to_string(), // syntax error, let serde report it
+    };
+    sanitize_value(&mut v);
+    serde_json::to_string(&v).unwrap_or_else(|_| raw.to_string())
+}
+
+/// 递归遍历 JSON 值，修复已知的 LLM 格式错误
+fn sanitize_value(v: &mut serde_json::Value) {
+    match v {
+        serde_json::Value::Object(map) => {
+            // Fix action_type: {"Speak": {}} -> "Speak", {"Think": {}} -> "Think"
+            if let Some(at) = map.get("action_type") {
+                if let Some(inner) = at.as_object() {
+                    if inner.len() == 1 {
+                        if let Some(val) = inner.get("Speak").or_else(|| inner.get("Think")) {
+                            if val == &serde_json::Value::Object(serde_json::Map::new()) {
+                                if let Some(k) = inner.keys().next() {
+                                    map.insert(
+                                        "action_type".to_string(),
+                                        serde_json::Value::String(k.clone()),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Fix link_type: move misplaced "confidence" inside Sem/Proc/Sit
+            if let Some(lt) = map.get("link_type") {
+                if let Some(lt_obj) = lt.as_object() {
+                    // Check if "confidence" is at the link_type level
+                    if lt_obj.contains_key("Sem") && lt_obj.contains_key("confidence") {
+                        let conf = lt_obj["confidence"].clone();
+                        if let Some(sem) = lt_obj.get("Sem") {
+                            if let Some(sem_obj) = sem.as_object() {
+                                let mut new_sem = sem_obj.clone();
+                                new_sem.insert("confidence".to_string(), conf);
+                                let mut new_lt = lt_obj.clone();
+                                new_lt
+                                    .insert("Sem".to_string(), serde_json::Value::Object(new_sem));
+                                new_lt.remove("confidence");
+                                map.insert(
+                                    "link_type".to_string(),
+                                    serde_json::Value::Object(new_lt),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Recursively process all child values
+            for val in map.values_mut() {
+                sanitize_value(val);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for val in arr.iter_mut() {
+                sanitize_value(val);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// 将行号+列号转换为字节偏移量
 fn line_col_to_byte_offset(text: &str, line: usize, column: usize) -> usize {
     let mut current_line = 1;

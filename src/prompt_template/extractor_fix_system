@@ -57,9 +57,32 @@
 **节点 ID 命名规范**：每个节点必须分配有意义的可读 ID，格式为：
 - 语义节点：`sem_<英文或拼音标识>`，如 `sem_remilia`、`sem_time_stop`
 - 情境节点（包括抽象情境和具体情境）：统一用 `sit_` 前缀，如 `sit_coding_day`、`sit_battle_incident`。**不要用其他前缀如 `abs_`**
-- 程序节点：`proc_<英文或拼音标识>`，如 `proc_knife_throw`、`proc_perfect_maid`“我的时间操控能力”“我追求完美”“我是吸血鬼猎人出身”等。
+- 程序节点：`proc_<英文或拼音标识>`，如 `proc_knife_throw`、`proc_perfect_maid`
 
-**边定义（必须生成）**：每个节点必须在 `mem_links` 中列出其与相关节点的关联。**不要留空数组**。至少为以下情况创建边：\n- 人物节点 → 相关人物节点（`Sem` 边，用 `verb` 描述关系，如"侍奉""同伴""敌对"）\n- 情境节点 → 参与者人物节点（`Sem` 边）\n- 抽象情境 → 该情境概括的具体情境（`Situation` 边，用 `AbstractToSpecific`）\n- 情境/程序 → 触发的程序节点（`Proc` 边，用 `prob` 标注触发概率）\n\n边字段说明：`from`/`to` 填写目标节点的 `id` 值，`intensity` 为 0.0~1.0，`link_type` 严格使用以下格式：\n- `{"Sem": {"verb": "侍奉", "confidence": 0.9}}`\n- `{"Proc": {"prob": 0.8}}`\n- `{"Situation": {"AbstractToSpecific": {}}}`，应包含 `verb`（谓词，如“侍奉”“击败”）、`intensity`（连接强度，0.0~1.0）和 `confidence`（置信度 0.0~1.0），但请严格按照 Schema 字段填充。
+**自身节点（必须创建 sem_self）**：
+- 必须创建一个 id 为 **sem_self** 的 Semantic 节点，作为记忆图谱的根节点
+- content：角色的中文全名
+- concept_type：Entity
+- aliases：角色的全部称谓（至少 2~3 个）
+- description（至少 50 字）：以第一人称"我"叙述角色的身份、核心能力、性格特质、关键经历与价值观
+- tags：["自身", "角色"]
+- 其他人物节点应与 sem_self 建立 Sem 连接（如"认识""同伴""敌对"等）
+
+**边定义（必须生成，严格遵循矩阵）**：每个节点必须在 mem_links 中列出其与相关节点的关联。**不要留空数组**。边合法性矩阵如下：
+
+| from -> to         | 边类型          | 参数                              |
+|--------------------|----------------|-----------------------------------|
+| Sem -> Sem/Sit/Proc | {Sem:{}}       | verb + confidence                 |
+| Sit -> Sem         | {Sem:{}}       | verb + confidence                 |
+| Sit -> Sit         | {Situation:{}} | AbstractToSpecific               |
+| Sit -> Proc        | {Proc:{}}      | prob                              |
+| Proc -> Sem        | {Sem:{}}       | verb + confidence                 |
+
+禁止：
+- **不允许** Procedure -> Situation（行为不触发事件，应为 Situation -> Procedure）
+- **不允许** Procedure -> Procedure（程序不直接触发程序）
+
+边字段：from/to 填写目标节点的 id，intensity 为 0.0~1.0。
 
 ### 3. 程序性记忆（Procedural）
 程序性记忆捕获角色的条件反射式行为、肌肉记忆和习惯性动作模式。节点分为 **trigger**（触发器）和 **action**（行为倾向）。

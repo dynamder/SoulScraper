@@ -110,7 +110,7 @@ pub struct Context {
 
     #[schemars(default)]
     #[serde(default)]
-    environment: Environment,
+    environment: Option<Environment>,
 
     #[schemars(default)]
     #[serde(default)]
@@ -123,7 +123,7 @@ impl Context {
         participants: Vec<Participant>,
         emotions: Vec<Emotion>,
         sensory_data: Vec<SensoryData>,
-        environment: Environment,
+        environment: Option<Environment>,
         event: Vec<Event>,
     ) -> Self {
         Context {
@@ -159,10 +159,10 @@ impl Context {
     pub fn get_sensory_data(&self) -> &Vec<SensoryData> {
         &self.sensory_data
     }
-    pub fn get_mut_environment(&mut self) -> &mut Environment {
+    pub fn get_mut_environment(&mut self) -> &mut Option<Environment> {
         &mut self.environment
     }
-    pub fn get_environment(&self) -> &Environment {
+    pub fn get_environment(&self) -> &Option<Environment> {
         &self.environment
     }
     pub fn get_mut_event(&mut self) -> &mut Vec<Event> {
@@ -176,9 +176,13 @@ impl Context {
 ///事件（动作，动作强度，事件发起者，动作目标）
 #[derive(Debug, PartialEq, PartialOrd, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Event {
+    #[serde(default)]
     pub action: String,
+    #[serde(default)]
     pub action_intensity: f32,
+    #[serde(default)]
     pub initiator: String,
+    #[serde(default)]
     pub target: String,
 }
 

@@ -5,7 +5,7 @@ use funera::OpenAIProvider;
 use schemars::schema_for;
 
 use crate::data_model::questioner::retrieve::RetrieveAssessInfo;
-use crate::util::{format_json_error, strip_markdown_wrapping};
+use crate::util::{format_json_error, sanitize_json, strip_markdown_wrapping};
 
 pub struct QuestionerAgent;
 
@@ -42,7 +42,7 @@ impl QuestionerAgent {
         let resp = handle.await?;
         eprintln!(" done");
 
-        let raw_content = strip_markdown_wrapping(&resp.content);
+        let raw_content = sanitize_json(&strip_markdown_wrapping(&resp.content));
         let retrieve_assess_info =
             serde_json::from_str::<RetrieveAssessInfo>(&raw_content);
 
