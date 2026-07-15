@@ -1,0 +1,19 @@
+src/bin/check_nodes.rs
+  s_fddc61bc930260::t_a55ec72f597974 1-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "dd8706058b4215d6006ebb28f18e5fcf406e0386",
+  "prompts": {},
+  "sessions": {
+    "s_fddc61bc930260": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_09c690d4affeCAW995WOVwCbGz",
+        "model": "unknown"
+      },
+      "human_author": "dynamder <igaster@163.com>"
+    }
+  }
+}
