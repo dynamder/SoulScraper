@@ -4,9 +4,20 @@ use funera::OpenAIProvider;
 use funera::{Agent, AgentEvent, AgentRuntime};
 use schemars::schema_for;
 
-use crate::data_model::extractor::GraphNodeList;
-use crate::graph_quality::{print_report, report_to_json, strip_illegal_edges, validate_graph};
+use crate::data_model::extractor::{
+    apply_edges, EdgeList, GraphNode, GraphNodeList,
+};
+use crate::data_model::soul_mem::sit::SituationType;
+use crate::data_model::soul_mem::MemoryType;
+use crate::graph_quality::{
+    print_report, report_to_json, strip_illegal_edges, validate_graph,
+};
 use crate::util::{format_json_error, sanitize_json, strip_markdown_wrapping};
+
+/// 单次 LLM 调用的结果
+struct LlmResult {
+    content: String,
+}
 
 pub struct ExtractorAgent;
 
@@ -18,128 +29,190 @@ impl ExtractorAgent {
         character_research: &str,
         debug_dir: Option<&Path>,
     ) -> anyhow::Result<GraphNodeList> {
-        let system_prompt_head = include_str!("../prompt_template/extractor_system");
-        let node_schema = schema_for!(GraphNodeList);
-        let system_prompt = format!(
-            "{system_prompt_head}\n\n{}",
-            serde_json::to_string_pretty(&node_schema).unwrap()
-        );
+        // ── Phase 1: nodes ──
+        let mut nodes = loop {
+            let raw = Self::call_llm(
+                api_key, api_base, model,
+                "extractor_node_system",
+                &format!("根据以下角色信息提取记忆节点（仅节点，不生成边）:\n\n{character_research}"),
+            ).await?;
 
-        let runtime = AgentRuntime::<OpenAIProvider>::builder()
-            .api_key(api_key.to_string())
-            .base_url(api_base.map(|s| s.to_string()))
-            .model(model.to_string())
-            .build()?;
+            let cleaned = sanitize_json(&strip_markdown_wrapping(&raw.content));
+            let result = serde_json::from_str::<GraphNodeList>(&cleaned);
 
-        let agent = Agent::builder().system_prompt(system_prompt).build();
+            match result {
+                Ok(nodes) => {
+                    if nodes.is_empty() {
+                        eprintln!("\nNode list empty, retrying with empty-list context...");
+                        Self::save_debug_file(debug_dir, "raw_failed_nodes_empty.json", &cleaned);
+                        continue;
+                    }
+                    if !nodes.iter().any(|n| n.id.contains("self")) {
+                        eprintln!("\nsem_self node missing, retrying with context...");
+                        Self::save_debug_file(debug_dir, "raw_failed_nodes_no_self.json", &cleaned);
+                        continue;
+                    }
+                    if nodes.len() < 10 {
+                        eprintln!("Warning: only {} nodes extracted", nodes.len());
+                    }
+                    break nodes;
+                }
+                Err(e) => {
+                    let detail = format_json_error(&cleaned, &e);
+                    eprintln!("\nNode parse failed.\n{detail}\nAttempting automatic repair...");
+                    Self::save_debug_file(debug_dir, "raw_failed_nodes.json", &cleaned);
 
-        eprint!("Extracting memory graph");
-        let mut handle = agent
-            .fire_stream(
-                &format!("根据以下角色信息进行提取: \n\n{character_research}"),
-                &runtime,
-            )
-            .await?;
+                    let fix = Self::call_llm(
+                        api_key, api_base, model,
+                        "extractor_node_system",
+                        &format!(
+                            "上一步生成的 JSON 解析失败，请参照完整的角色信息修复。\n\n# 角色信息\n{character_research}\n\n# 失败原因\n{detail}\n\n# 损坏的 JSON\n{cleaned}"
+                        ),
+                    ).await?;
 
-        while let Some(event) = handle.recv().await {
-            if matches!(event, AgentEvent::Done) {
-                break;
-            }
-            eprint!(".");
-            let _ = std::io::Write::write(&mut std::io::stderr(), b"");
-        }
-        let resp = handle.await?;
-        eprintln!(" done");
-
-        let raw_content = sanitize_json(&strip_markdown_wrapping(&resp.content));
-
-        // Phase 1: parse JSON
-        let nodes = serde_json::from_str::<GraphNodeList>(&raw_content);
-
-        let (parsed_nodes, did_fix) = match nodes {
-            Ok(nodes) => (nodes, false),
-            Err(e) => {
-                let error_detail = format_json_error(&raw_content, &e);
-                eprintln!("\nJSON parse failed.\n{error_detail}\nAttempting automatic repair...");
-                Self::save_debug_file(debug_dir, "raw_failed_extract.json", &raw_content);
-
-                let fix_response = Self::try_fix_json(
-                    api_key, api_base, model,
-                    &raw_content, character_research, &error_detail,
-                ).await?;
-
-                (serde_json::from_str::<GraphNodeList>(&fix_response).map_err(|fatal_err| {
-                    let fatal_detail = format_json_error(&fix_response, &fatal_err);
-                    Self::save_debug_file(debug_dir, "raw_failed_extract_fix.json", &fix_response);
-                    tracing::error!("fatal error after fix.\noriginal:\n{error_detail}\n\nfix:\n{fatal_detail}");
-                    fatal_err
-                })?, true)
+                    let fix_cleaned = sanitize_json(&strip_markdown_wrapping(&fix.content));
+                    match serde_json::from_str::<GraphNodeList>(&fix_cleaned) {
+                        Ok(nodes) => {
+                            if !nodes.iter().any(|n| n.id.contains("self")) {
+                                eprintln!("Warning: sem_self missing after fix, continuing");
+                            }
+                            break nodes;
+                        }
+                        Err(fatal_e) => {
+                            Self::save_debug_file(debug_dir, "raw_failed_nodes_fix.json", &fix_cleaned);
+                            return Err(anyhow::anyhow!(
+                                "Node fix failed:\n{}", format_json_error(&fix_cleaned, &fatal_e)
+                            ));
+                        }
+                    }
+                }
             }
         };
 
-        // Phase 2: strip illegal edges, then validate structure
-        let mut cleaned_nodes = parsed_nodes;
-        let failure_snapshot = serde_json::to_string_pretty(&cleaned_nodes).unwrap();
-        Self::save_debug_file(debug_dir, "raw_failed_structure.json", &failure_snapshot);
-        strip_illegal_edges(&mut cleaned_nodes);
-        let report = validate_graph(&cleaned_nodes);
-        print_report(&report);
-        Self::save_stat_file(debug_dir, "graph_stats.json", &report_to_json(&report));
+        // ── Phase 2: edges ──
+        let node_summary = Self::build_node_summary(&nodes);
 
-        if report.is_structurally_valid {
-            return Ok(cleaned_nodes);
-        }
+        loop {
+            let raw = Self::call_llm(
+                api_key, api_base, model,
+                "extractor_edge_system",
+                &format!("根据以下节点列表生成合法的连接边:\n\n{node_summary}"),
+            ).await?;
 
-        if did_fix {
-            eprintln!("\nStructural quality not met after regeneration, aborting.");
-            return Err(anyhow::anyhow!(
-                "Structural quality not met after regeneration:\n{}",
-                report.failures.join("\n")
-            ));
-        }
+            let cleaned = sanitize_json(&strip_markdown_wrapping(&raw.content));
+            let result = serde_json::from_str::<EdgeList>(&cleaned);
 
-        // Regenerate from scratch instead of trying to fix the broken JSON
-        eprintln!("\nStructural quality check failed, re-extracting with failure context...");
-        let regenerated = Self::re_extract(
-            api_key, api_base, model,
-            character_research, &report.failures.join("\n"),
-        ).await?;
+            let edges = match result {
+                Ok(edges) => edges,
+                Err(e) => {
+                    let detail = format_json_error(&cleaned, &e);
+                    eprintln!("\nEdge parse failed.\n{detail}\nAttempting automatic repair...");
+                    Self::save_debug_file(debug_dir, "raw_failed_edges.json", &cleaned);
 
-        let mut regenerated_nodes: GraphNodeList = serde_json::from_str(&regenerated).map_err(|e| {
-            let detail = format_json_error(&regenerated, &e);
-            Self::save_debug_file(debug_dir, "raw_failed_structure_fix.json", &regenerated);
-            anyhow::anyhow!("Regeneration parse failed:\n{detail}")
-        })?;
+                    let fix = Self::call_llm(
+                        api_key, api_base, model,
+                        "extractor_edge_system",
+                        &format!(
+                            "上一步生成的边列表解析失败，请参照以下节点列表修复:\n\n{node_summary}\n\n# 失败原因\n{detail}\n\n# 损坏的 JSON\n{cleaned}"
+                        ),
+                    ).await?;
 
-        strip_illegal_edges(&mut regenerated_nodes);
-        let report2 = validate_graph(&regenerated_nodes);
-        print_report(&report2);
-        Self::save_stat_file(debug_dir, "graph_stats.json", &report_to_json(&report2));
+                    let fix_cleaned = sanitize_json(&strip_markdown_wrapping(&fix.content));
+                    match serde_json::from_str::<EdgeList>(&fix_cleaned) {
+                        Ok(edges) => edges,
+                        Err(fatal_e) => {
+                            Self::save_debug_file(debug_dir, "raw_failed_edges_fix.json", &fix_cleaned);
+                            return Err(anyhow::anyhow!(
+                                "Edge fix failed:\n{}", format_json_error(&fix_cleaned, &fatal_e)
+                            ));
+                        }
+                    }
+                }
+            };
 
-        if report2.is_structurally_valid {
-            Ok(regenerated_nodes)
-        } else {
-            Err(anyhow::anyhow!(
-                "Structural quality not met after regeneration:\n{}",
-                report2.failures.join("\n")
-            ))
+            apply_edges(&mut nodes, &edges);
+            strip_illegal_edges(&mut nodes);
+
+            let report = validate_graph(&nodes);
+            print_report(&report);
+            Self::save_stat_file(debug_dir, "graph_stats.json", &report_to_json(&report));
+
+            if report.is_structurally_valid {
+                return Ok(nodes);
+            }
+
+            // Structural failure — regenerate edges
+            let failure_text = report.failures.join("\n");
+            let illegal_detail: Vec<String> = report.illegal_edges.iter()
+                .map(|e| format!("❌ {} ({}) --{}--> {} ({}) | {}", e.from_id, e.from_type, e.link_type, e.to_id, e.to_type, e.reason))
+                .collect();
+            let edge_context = if illegal_detail.is_empty() {
+                String::new()
+            } else {
+                format!("\n# 已知非法边（不可出现）\n{}\n", illegal_detail.join("\n"))
+            };
+
+            eprintln!("\nStructural quality check failed, regenerating edges...\n{failure_text}");
+            Self::save_debug_file(debug_dir, "raw_failed_edges_structure.json", &serde_json::to_string_pretty(&edges).unwrap());
+
+            // Rebuild summary and retry
+            let node_summary = Self::build_node_summary(&nodes);
+            let raw2 = Self::call_llm(
+                api_key, api_base, model,
+                "extractor_edge_system",
+                &format!(
+                    "重新生成边。之前的边结构验证失败，请重新构建。\n\n{node_summary}{edge_context}\n\n# 结构验证失败原因\n{failure_text}"
+                ),
+            ).await?;
+
+            let cleaned2 = sanitize_json(&strip_markdown_wrapping(&raw2.content));
+            match serde_json::from_str::<EdgeList>(&cleaned2) {
+                Ok(edges2) => {
+                    apply_edges(&mut nodes, &edges2);
+                    strip_illegal_edges(&mut nodes);
+                    let report2 = validate_graph(&nodes);
+                    print_report(&report2);
+                    Self::save_stat_file(debug_dir, "graph_stats.json", &report_to_json(&report2));
+                    if report2.is_structurally_valid {
+                        return Ok(nodes);
+                    }
+                    return Err(anyhow::anyhow!(
+                        "Graph quality not met after 2 edge generation attempts:\n{}",
+                        report2.failures.join("\n")
+                    ));
+                }
+                Err(fatal_e) => {
+                    Self::save_debug_file(debug_dir, "raw_failed_edges_fix2.json", &cleaned2);
+                    return Err(anyhow::anyhow!(
+                        "Edge reparse failed:\n{}", format_json_error(&cleaned2, &fatal_e)
+                    ));
+                }
+            }
         }
     }
 
-    /// 用结构失败原因作为上下文，完全重新调用 LLM 生成图谱
-    async fn re_extract(
+    // ── LLM 调用 ──
+
+    async fn call_llm(
         api_key: &str,
         api_base: Option<&str>,
         model: &str,
-        character_research: &str,
-        failure_context: &str,
-    ) -> anyhow::Result<String> {
-        let system_prompt_head = include_str!("../prompt_template/extractor_system");
-        let node_schema = schema_for!(GraphNodeList);
-        let system_prompt = format!(
-            "{system_prompt_head}\n\n{}",
-            serde_json::to_string_pretty(&node_schema).unwrap()
-        );
+        prompt_name: &'static str,
+        user_msg: &str,
+    ) -> anyhow::Result<LlmResult> {
+        let head = match prompt_name {
+            "extractor_node_system" => include_str!("../prompt_template/extractor_node_system"),
+            "extractor_edge_system" => include_str!("../prompt_template/extractor_edge_system"),
+            _ => return Err(anyhow::anyhow!("Unknown prompt: {prompt_name}")),
+        };
+
+        let schema = match prompt_name {
+            "extractor_node_system" => schema_for!(GraphNodeList),
+            "extractor_edge_system" => schema_for!(EdgeList),
+            _ => unreachable!(),
+        };
+
+        let system = format!("{head}\n\n{}", serde_json::to_string_pretty(&schema).unwrap());
 
         let runtime = AgentRuntime::<OpenAIProvider>::builder()
             .api_key(api_key.to_string())
@@ -147,69 +220,33 @@ impl ExtractorAgent {
             .model(model.to_string())
             .build()?;
 
-        let agent = Agent::builder().system_prompt(system_prompt).build();
+        let agent = Agent::builder().system_prompt(system).build();
 
-        eprint!("Re-extracting with structure constraints");
-        let mut handle = agent
-            .fire_stream(&format!(
-                "根据以下角色信息进行提取。注意修复上次生成的图谱结构问题：\n\n{failure_context}\n\n{character_research}"
-            ), &runtime)
-            .await?;
-
+        eprint!("[{prompt_name}] generating");
+        let mut handle = agent.fire_stream(user_msg, &runtime).await?;
         while let Some(event) = handle.recv().await {
-            if matches!(event, AgentEvent::Done) {
-                break;
-            }
+            if matches!(event, AgentEvent::Done) { break; }
             eprint!(".");
             let _ = std::io::Write::write(&mut std::io::stderr(), b"");
         }
         let resp = handle.await?;
         eprintln!(" done");
 
-        Ok(sanitize_json(&strip_markdown_wrapping(&resp.content)))
+        Ok(LlmResult { content: resp.content })
     }
 
-    async fn try_fix_json(
-        api_key: &str,
-        api_base: Option<&str>,
-        model: &str,
-        json_str: &str,
-        character_research: &str,
-        error_detail: &str,
-    ) -> anyhow::Result<String> {
-        let fixer_system_head = include_str!("../prompt_template/extractor_fix_system");
-        let node_schema = schema_for!(GraphNodeList);
-        let fixer_system = format!(
-            "{fixer_system_head}\n{}",
-            serde_json::to_string_pretty(&node_schema).unwrap()
-        );
-
-        let runtime = AgentRuntime::<OpenAIProvider>::builder()
-            .api_key(api_key.to_string())
-            .base_url(api_base.map(|s| s.to_string()))
-            .model(model.to_string())
-            .build()?;
-
-        let agent = Agent::builder().system_prompt(fixer_system).build();
-
-        eprint!("Repairing JSON");
-        let mut handle = agent
-            .fire_stream(&format!(
-                "根据以下角色信息和json进行修复: \n\n#角色信息\n{character_research}\n\n#损坏的Json\n{json_str}\n\n#json错误原因\n{error_detail}"
-            ), &runtime)
-            .await?;
-
-        while let Some(event) = handle.recv().await {
-            if matches!(event, AgentEvent::Done) {
-                break;
-            }
-            eprint!(".");
-            let _ = std::io::Write::write(&mut std::io::stderr(), b"");
+    fn build_node_summary(nodes: &[GraphNode]) -> String {
+        let mut lines = Vec::new();
+        for node in nodes {
+            let type_name = match &node.mem_type {
+                MemoryType::Semantic(_) => "Semantic",
+                MemoryType::Situation(_) => "Situation",
+                MemoryType::Procedure(_) => "Procedure",
+            };
+            let content = describe_node_content(node);
+            lines.push(format!("- {} ({}) tags={:?} 内容: {}", node.id, type_name, node.tags, content));
         }
-        let resp = handle.await?;
-        eprintln!(" done");
-
-        Ok(resp.content)
+        lines.join("\n")
     }
 
     fn save_debug_file(debug_dir: Option<&Path>, filename: &str, content: &str) {
@@ -217,24 +254,30 @@ impl ExtractorAgent {
             Some(dir) => {
                 let path = dir.join(filename);
                 let _ = std::fs::write(&path, content);
-                eprintln!("  detail saved to {}", path.display());
+                eprintln!("  saved {}", path.display());
             }
             None => {
                 let _ = std::fs::write(filename, content);
-                eprintln!("  detail saved to ./{filename}");
+                eprintln!("  saved ./{filename}");
             }
         }
     }
 
     fn save_stat_file(debug_dir: Option<&Path>, filename: &str, content: &str) {
         match debug_dir {
-            Some(dir) => {
-                let path = dir.join(filename);
-                let _ = std::fs::write(&path, content);
-            }
-            None => {
-                let _ = std::fs::write(filename, content);
-            }
+            Some(dir) => { let _ = std::fs::write(dir.join(filename), content); }
+            None => { let _ = std::fs::write(filename, content); }
         }
+    }
+}
+
+fn describe_node_content(node: &GraphNode) -> String {
+    match &node.mem_type {
+        MemoryType::Semantic(sem) => sem.content.chars().take(60).collect(),
+        MemoryType::Situation(sit) => match sit {
+            SituationType::SpecificSituation(sp) => sp.narrative.chars().take(60).collect(),
+            SituationType::AbstractSituation(_abs) => "(abstract situation)".to_string(),
+        },
+        MemoryType::Procedure(proc) => proc.get_action().get_content().chars().take(60).collect(),
     }
 }

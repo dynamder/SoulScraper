@@ -1,8 +1,45 @@
+use serde::Deserialize;
+
+/// 反序列化辅助：将 `null` 或缺失字段处理为 `Default::default()`（如 `null` → `vec![]`）
+pub(crate) fn null_to_default<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
+}
+
+/// 反序列化辅助：接受单个对象、数组、或 null，统一转换为 `Option<Vec<T>>`
+pub(crate) fn one_or_many<'de, D, T>(d: D) -> Result<Option<Vec<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let v = serde_json::Value::deserialize(d)?;
+    match v {
+        serde_json::Value::Null => Ok(None),
+        serde_json::Value::Array(arr) => {
+            let items: Vec<T> = arr
+                .into_iter()
+                .map(|item| serde_json::from_value(item).map_err(serde::de::Error::custom))
+                .collect::<Result<_, _>>()?;
+            Ok(Some(items))
+        }
+        serde_json::Value::Object(_) => {
+            let item: T = serde_json::from_value(v).map_err(serde::de::Error::custom)?;
+            Ok(Some(vec![item]))
+        }
+        _ => Err(serde::de::Error::custom(
+            "expected an array, object, or null",
+        )),
+    }
+}
+
 /// 从 serde_json 错误中提取 JSON 上下文（错误位置前后各 100 字符）
 pub fn format_json_error(json_str: &str, err: &serde_json::Error) -> String {
     let snippet = match (err.line(), err.column()) {
         (0, _) | (_, 0) => {
-            let start = json_str.len().saturating_sub(200);
+            let start = json_str.floor_char_boundary(json_str.len().saturating_sub(200));
             &json_str[start..]
         }
         (line, col) => {
@@ -18,7 +55,8 @@ pub fn format_json_error(json_str: &str, err: &serde_json::Error) -> String {
                 let after = &s[local_cursor..];
                 return format!("{prefix}{before}‹── HERE ──›{after}{suffix}");
             }
-            &json_str[0..200.min(json_str.len())]
+            let safe_end = json_str.floor_char_boundary(200.min(json_str.len()));
+            &json_str[..safe_end]
         }
     };
 
@@ -113,6 +151,43 @@ fn sanitize_value(v: &mut serde_json::Value) {
                                 );
                             }
                         }
+                    }
+                }
+            }
+
+            // Fix concept_type: "AbstractConcept" → "Abstract", "Action" → "Entity"
+            if let Some(ct) = map.get("concept_type") {
+                if let Some(s) = ct.as_str() {
+                    let fixed = match s {
+                        "AbstractConcept" => "Abstract",
+                        "Action" => "Entity",
+                        _ => s,
+                    };
+                    if fixed != s {
+                        map.insert(
+                            "concept_type".to_string(),
+                            serde_json::Value::String(fixed.to_string()),
+                        );
+                    }
+                }
+            }
+
+            // Fix null String fields → empty string (for known nullable fields)
+            for (key, val) in map.iter_mut() {
+                if val.is_null() {
+                    let nullable = matches!(
+                        key.as_str(),
+                        "description"
+                            | "name"
+                            | "role"
+                            | "atmosphere"
+                            | "tone"
+                            | "coordinates"
+                            | "initiator"
+                            | "target"
+                    );
+                    if nullable {
+                        *val = serde_json::Value::String(String::new());
                     }
                 }
             }

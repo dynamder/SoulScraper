@@ -1,6 +1,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::util::one_or_many;
+
 /// Questioner 输出：LLM 生成的结构化检索查询及查询集合
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RetrieveAssessInfo {
@@ -76,19 +78,19 @@ pub struct SituationQueryUnit {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub narrative: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(default, deserialize_with = "one_or_many")]
     pub location: Option<Vec<LocationQueryUnit>>,
 
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(default, deserialize_with = "one_or_many")]
     pub participants: Option<Vec<ParticipantQueryUnit>>,
 
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(default, deserialize_with = "one_or_many")]
     pub time_span: Option<Vec<TimeSpanQueryUnit>>,
 
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(default)]
     pub environment: Option<EnvironmentQueryUnit>,
 
-    #[serde(skip_serializing_if = "Option::is_none", default)]
+    #[serde(default, deserialize_with = "one_or_many")]
     pub event: Option<Vec<EventQueryUnit>>,
 }
 

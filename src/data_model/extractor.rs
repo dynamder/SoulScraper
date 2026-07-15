@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use crate::data_model::soul_mem::{
     MemoryLink, MemoryLinkType, MemoryNote, MemoryNoteBuilder, MemoryType,
 };
+
+use crate::util::null_to_default;
 
 /// LLM 输出：记忆图节点数组（GraphNodeRaw[]）
 pub type GraphNodeList = Vec<GraphNode>;
@@ -16,6 +18,7 @@ pub struct GraphNode {
     /// 全局唯一可读 ID
     pub id: String,
     /// 标签，参与 embedding 计算
+    #[serde(deserialize_with = "null_to_default")]
     pub tags: Vec<String>,
     /// 记忆类型（Semantic / Situation / Procedure）
     pub mem_type: MemoryType,
@@ -35,6 +38,42 @@ pub struct GraphLink {
     pub intensity: f64,
     /// 边类型（Sem / Proc / Situation）
     pub link_type: MemoryLinkType,
+}
+
+/// LLM Phase 2 输出：仅边描述
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct EdgeList {
+    pub edges: Vec<GraphLink>,
+}
+
+/// 将 Phase 2 生成的边注入到节点列表中
+pub fn apply_edges(nodes: &mut [GraphNode], edges: &EdgeList) {
+    // 清空所有已有边
+    for node in nodes.iter_mut() {
+        node.mem_links.clear();
+    }
+    // 按 from 分组注入
+    let mut by_from: HashMap<&str, Vec<&GraphLink>> = HashMap::new();
+    for edge in &edges.edges {
+        by_from.entry(edge.from.as_str()).or_default().push(edge);
+    }
+    for node in nodes.iter_mut() {
+        if let Some(links) = by_from.remove(node.id.as_str()) {
+            node.mem_links = links.into_iter().cloned().collect();
+        }
+    }
+}
+
+/// 按 id 合并两组节点：fix 列表中的节点覆盖 valid 中同 id 的节点
+pub fn merge_nodes(valid: &[GraphNode], fix: &[GraphNode]) -> Vec<GraphNode> {
+    let fix_ids: HashSet<&str> = fix.iter().map(|n| n.id.as_str()).collect();
+    let mut merged: Vec<GraphNode> = valid
+        .iter()
+        .filter(|n| !fix_ids.contains(n.id.as_str()))
+        .cloned()
+        .collect();
+    merged.extend(fix.iter().cloned());
+    merged
 }
 
 pub fn graph_node_list_to_memory_notes(nodes: GraphNodeList) -> Vec<MemoryNote> {

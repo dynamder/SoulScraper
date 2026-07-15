@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::util::null_to_default;
+
 //一种抽象性情景记忆、一种具体性情景记忆
 #[derive(Debug, PartialEq, PartialOrd, Clone, Serialize, Deserialize, JsonSchema)]
 pub enum SituationType {
@@ -97,15 +99,15 @@ pub struct Context {
     location: Option<Location>,
 
     #[schemars(default)]
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     participants: Vec<Participant>,
 
     #[schemars(default)]
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     emotions: Vec<Emotion>,
 
     #[schemars(default)]
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     sensory_data: Vec<SensoryData>,
 
     #[schemars(default)]
@@ -113,7 +115,7 @@ pub struct Context {
     environment: Option<Environment>,
 
     #[schemars(default)]
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     event: Vec<Event>,
 }
 

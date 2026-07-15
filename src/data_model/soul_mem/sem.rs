@@ -1,6 +1,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::util::null_to_default;
+
 // 概念类型
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub enum ConceptType {
@@ -15,7 +17,7 @@ pub struct SemMemory {
     pub content: String,
 
     /// 别名
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     #[schemars(default)]
     pub aliases: Vec<String>,
 
