@@ -10,34 +10,50 @@ An LLM-powered virtual character information scraper and extractor. It automatic
 
 AI Agent-driven automatic collection of detailed virtual character information starting from a given URL:
 
-- Starting from the initial URL, automatically identifies and scrapes relevant linked pages (max depth: 2)
+- Starting from the initial URL, automatically identifies and scrapes relevant linked pages
 - Covers all character details: appearance, personality, experiences, relationships, behavior patterns, values, abilities, etc.
 - Outputs as a **first-person perspective** character research report
 
-### 2. Memory Extraction (Extract)
+### 2. Memory Extraction (Extract) — Two-Phase Pipeline
 
-Converts character research reports into structured **Memory Graphs**:
+Converts character research reports into structured **Memory Graphs** in two phases:
 
-- **Semantic Memory**: Conceptual knowledge nodes (people, concepts, facts)
-- **Situational Memory**: Character's specific/abstract experiences
-- **Procedural Memory**: Behavior patterns, habits, conditioned reflexes
-- Automatically fixes JSON format errors in LLM output
+**Phase 1 — Node Extraction**: Extract all memory nodes (no edges)
+- **Semantic**: Characters, concepts, facts
+- **Situation**: Specific/abstract experiences
+- **Procedure**: Behavior patterns, habits, conditioned reflexes
+- Auto-fixes JSON format errors from LLM output
+
+**Phase 2 — Edge Generation**: Generate edges between validated nodes
+- **Sem** edges: Semantic associations (verb + confidence)
+- **Proc** edges: Situation-triggered behaviors (probability indexed)
+- **Situation** edges: Abstract-to-specific
+- Auto-removes illegal edges (Proc→Sit, Proc→Proc)
+- Graph quality validation (clustering, modularity, redundancy)
 
 ### 3. Retrieval Query Generation (Retrieve)
 
-Automatically generates structured retrieval queries from character memory graphs for evaluating retrieval system quality:
+Generates structured retrieval queries from memory graphs for evaluating retrieval systems:
 
-- Auto-generates 60+ retrieval queries that simulate real user questions
-- Includes both Semantic and Situation query variants
-- Query Sets provide multiple colloquial expression variants for the same intent
-- Each query is annotated with expected retrieval nodes (must_include / may_include)
-- Supports `--tendency` flag to control generation bias
+- Semantic and Situation query variants
+- Query sets with multiple paraphrased variants
+- Auto-annotates expected note matches (must_include / may_include)
+- Supports `--tendency` parameter
+
+### 4. Batch Processing (Batch)
+
+Process multiple characters from a URL list file:
+
+- Supports `name<TAB>url` format (names used as output directory names)
+- Resume: skips existing output files
+- Concurrency: `--parallel N`
+- Atomic logging: no interleaving in concurrent mode
 
 ## Quick Start
 
-### Requirements
+### Prerequisites
 
-- Rust 1.75+ / Cargo
+- Rust 1.82+ / Cargo
 - OpenAI API Key or compatible API Base
 
 ### Build
@@ -46,153 +62,101 @@ Automatically generates structured retrieval queries from character memory graph
 cargo build --release
 ```
 
-### Configure API Key
+### Set API Key
 
 ```bash
-# Linux/macOS
 export SOUL_SCRAPER_KEY=your_api_key_here
-
-# Windows PowerShell
-$env:SOUL_SCRAPER_KEY="your_api_key_here"
 ```
 
-### Scrape Character Info
-
-Scrape character research report from a web URL:
+### Single Character
 
 ```bash
-soul_scraper --model gpt-4o --scrape "https://zh.moegirl.org.cn/十六夜咲夜" --output result.md
+# Scrape
+soul_scraper --model gpt-4o --scrape "https://zh.moegirl.org.cn/十六夜咲夜" -o result.md
+
+# Extract (two-phase: nodes → edges → validation)
+soul_scraper --model gpt-4o --extract result.md -o graph.json
+
+# Generate questions
+soul_scraper --model gpt-4o --retrieve --query graph.json -o questions.json
 ```
 
-### Extract Memory Graph
+### Batch Processing
 
-Read character info from file or stdin, output JSON format memory graph:
+URL list file format:
+
+```txt
+Sakuya	https://zh.moegirl.org.cn/%E5%8D%81%E5%85%AD%E5%A4%9C%E5%92%B2%E5%A4%9C
+Reimu	https://zh.moegirl.org.cn/%E5%8D%9A%E4%B8%BD%E7%81%B5%E6%A2%A6
+```
 
 ```bash
-# From file
-soul_scraper --model gpt-4o --extract result.md --output memory.json
+# Sequential
+soul_scraper --model gpt-4o --batch urls.txt --out-dir ./output
 
-# From stdin
-type result.md | cargo run -- --model gpt-4o --extract - --output memory.json
-
-# Direct text input
-soul_scraper --model gpt-4o --extract "Sakuya is the head maid of the Scarlet Devil Mansion..." --output memory.json
+# Parallel (3 concurrent)
+soul_scraper --model gpt-4o --batch urls.txt --out-dir ./output --parallel 3
 ```
 
-### Generate Retrieval Queries
+## CLI Parameters
 
-Auto-generate retrieval queries from a memory graph JSON file:
-
-```bash
-# Basic usage
-soul_scraper --model gpt-4o --retrieve --query memory.json --output queries.json
-
-# With generation tendency
-soul_scraper --model gpt-4o --retrieve --query memory.json --output queries.json --tendency "Focus on relationship queries, prefer Semantic variant"
-```
-
-## Command Line Options
-
-| Option | Description |
-|--------|-------------|
-| `--model <MODEL>` | LLM model name (e.g., `gpt-4o`) |
-| `--scrape <URL>` | Scrape character info from specified URL |
-| `--extract <INPUT>` | Extract memory from file path, content string, or `-` (stdin) |
+| Parameter | Description |
+|-----------|-------------|
+| `--model <MODEL>` | LLM model name (e.g. `gpt-4o`) |
+| `--scrape <URL>` | Scrape character from URL |
+| `--extract <INPUT>` | Extract memory from file, string, or stdin |
 | `--retrieve` | Retrieval query generation mode |
-| `--query <INPUT>` | Input for retrieval query generation (memory graph JSON file path or content) |
+| `--query <INPUT>` | Input memory graph JSON |
 | `--tendency <STR>` | Query generation tendency (optional) |
+| `--batch <FILE>` | Batch mode: read URLs from file |
+| `--out-dir <PATH>` | Batch output root directory |
+| `--parallel <N>` | Batch concurrency (default 1) |
 | `-o, --output <PATH>` | Output file path, `-` for stdout |
-| `--api-base <URL>` | OpenAI-compatible API base URL (optional) |
+| `--api-base <URL>` | OpenAI compatible API base URL |
 
+## Output Format
 
-
-## Output Format Examples
-
-### Scrape Output (Markdown)
-
-```markdown
-## Basic Information
-- Gender: Female
-- Age (apparent age): Forever 17
-...
-
-## Self Description
-
-## Relationships
-
-## Behavior Patterns
-
-## Values
-```
-
-### Extract Output (JSON)
+### Graph JSON (GraphNodeRaw[])
 
 ```json
-{
-  "graph": {
-    "nodes": [
+[
+  {
+    "id": "sem_self",
+    "tags": ["self", "character"],
+    "mem_type": {
+      "Semantic": {
+        "content": "Sakuya Izayoi",
+        "aliases": ["Sakuya", "Remilia's maid"],
+        "concept_type": "Entity",
+        "description": "I am the head maid of the Scarlet Devil Mansion..."
+      }
+    },
+    "mem_links": [
       {
-        "node_id": "sem_1",
-        "tags": ["character", "master"],
-        "mem_type": {
-          "mem_kind": "Semantic",
-          "content": "Remilia Scarlet",
-          "description": "The mistress of the Scarlet Devil Mansion..."
-        }
+        "from": "sem_self",
+        "to": "sem_remilia",
+        "intensity": 0.9,
+        "link_type": { "Sem": { "verb": "serves", "confidence": 0.9 } }
       }
-    ],
-    "links": [...]
-  },
-  "summary": "I, Sakuya Izayoi, am the head maid of the Scarlet Devil Mansion..."
-}
+    ]
+  }
+]
 ```
 
-### Retrieval Query Output (JSON)
+### Graph Stats (graph_stats.json)
 
 ```json
 {
-  "queries": [
-    {
-      "priority": 9,
-      "tags": ["character"],
-      "expected": {
-        "must_include": ["sem_bronya"],
-        "may_include": []
-      },
-      "variant": {
-        "variant_kind": "Semantic",
-        "units": [
-          {
-            "concept_identifier": "her big sister",
-            "description": "the silver-haired girl who always protected her at the orphanage"
-          }
-        ]
-      }
-    }
-  ],
-  "query_sets": [
-    {
-      "set_id": "set_bronya",
-      "description": "Query about the most important person to Seele",
-      "queries": [
-        {
-          "priority": 9,
-          "tags": ["character"],
-          "expected": { "must_include": ["sem_bronya"], "may_include": [] },
-          "variant": {
-            "variant_kind": "Semantic",
-            "units": [{ "concept_identifier": "her big sister", "description": "the silver-haired girl who always protected her" }]
-          }
-        }
-      ]
-    }
-  ]
+  "node_count": 46,
+  "edge_count": 147,
+  "global_redundancy": 2.27,
+  "avg_clustering": 0.67,
+  "community_modularity": 0.25,
+  "is_structurally_valid": true,
+  "illegal_edges": [],
+  "failures": []
 }
 ```
-
-## Related Projects
-
-- [SoulMem](https://github.com/dynamder/SoulMem) - Character role-playing memory system (downstream data consumer)
 
 ## License
 
