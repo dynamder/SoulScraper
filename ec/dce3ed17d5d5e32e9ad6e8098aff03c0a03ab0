@@ -1,0 +1,58 @@
+src/bin/diag.rs
+  s_a29d7202c346d5::t_fbb8a8c5a39624 1-11,13-18,26-80
+  s_a29d7202c346d5::t_9aed423466bd7a 12
+  s_a29d7202c346d5::t_c454002cc14a24 19-25
+src/data_model/questioner/retrieve.rs
+  s_a29d7202c346d5::t_2434fb4d93e899 4-5
+  s_a29d7202c346d5::t_31178b0c745b7a 81,84,87,90,93
+src/data_model/extractor.rs
+  s_a29d7202c346d5::t_7ddab05361ee9b 10-11
+  s_a29d7202c346d5::t_e0539982299234 1
+  s_a29d7202c346d5::t_352910cce7b0be 43-78
+  s_a29d7202c346d5::t_bac5e792590f98 21
+src/prompt_template/extractor_node_system
+  s_a29d7202c346d5::t_ffd108c14df736 1-17,19,23-69
+  s_a29d7202c346d5::t_80b1d25ea8c1ff 18,20-22
+src/lib.rs
+  s_a29d7202c346d5::t_07cc716ab70722 1-7
+src/data_model/soul_mem/sit.rs
+  s_a29d7202c346d5::t_a47ce2fbe83c78 5
+  s_a29d7202c346d5::t_f1b260ffef1d20 6
+src/batch.rs
+  s_a29d7202c346d5::t_56cd5faffafffc 81
+  s_a29d7202c346d5::t_b6734b480cf4ca 2,4,25,27,32-58,61-80,82-87,91-93,96,102,106-107,109,118,121,129-133,136-137,139,144-146,149,155-156,158,163,166-174,179,183,187,189-190,194,198,201,203,207,214,216-218,222,226,232,236,240,242-244,249,258,260-261,263,265-266,272-273,275-276,278,283-285,317-319,325-336,342-350,356-376,387,391
+  s_a29d7202c346d5::t_a83a5f31957474 59-60
+src/bin/diag_q.rs
+  s_a29d7202c346d5::t_f8ac1a19868ba3 1-47
+src/agents/extractor_agent.rs
+  s_a29d7202c346d5::t_74da7e9339ec3c 235
+  s_a29d7202c346d5::t_0c37f9d6dcece1 7,9,12-14,39,59,97,100-101,195-196,203-214,225,228,238-241,245-247,249,268-269,273-276
+  s_a29d7202c346d5::t_4e8fb470d1addf 8,10-11,17-21,32-38,40-58,60-88,92-96,98-99,102-142,144-190,194,200-202,215,223,226,242-244,257,261,277-280,283
+  s_a29d7202c346d5::t_de4b09c55cc4e6 281
+  s_a29d7202c346d5::t_b3d29ea533f50e 282
+src/prompt_template/extractor_edge_system
+  s_a29d7202c346d5::t_3f63fa2e8f197d 1-43
+src/util.rs
+  s_a29d7202c346d5::t_94efbbb4e12423 12-37
+  s_a29d7202c346d5::t_81064e3c6f4475 1-11
+  s_a29d7202c346d5::t_4c2707dfad81b4 42
+  s_a29d7202c346d5::t_edf9491a09a10d 158-177,188-194
+  s_a29d7202c346d5::t_b911643b1464b2 178-187
+  s_a29d7202c346d5::t_b69e619bacef00 58-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "ecdce3ed17d5d5e32e9ad6e8098aff03c0a03ab0",
+  "prompts": {},
+  "sessions": {
+    "s_a29d7202c346d5": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0a154aeb0ffeK6nCGqlHWxxC3k",
+        "model": "unknown"
+      },
+      "human_author": "dynamder <igaster@163.com>"
+    }
+  }
+}
