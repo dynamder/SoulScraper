@@ -1,0 +1,61 @@
+src/prompt_template/extractor_node_system
+  s_cd17db9bf5ef35::t_f0f7e63ccd63d0 41-45,47
+  s_cd17db9bf5ef35::t_2cac9c8a8d56a6 81
+  s_cd17db9bf5ef35::t_afb2313a8f7b4c 57-61
+  s_cd17db9bf5ef35::t_2f1e275fff4749 26-30
+  s_cd17db9bf5ef35::t_1615bd6e813b8d 16-18
+  s_cd17db9bf5ef35::t_d438865787f095 6-7
+src/agents/extractor_agent.rs
+  s_cd17db9bf5ef35::t_30e92054f577f9 13-14
+  s_cd17db9bf5ef35::t_fc8f8997054f3f 177-179
+  s_cd17db9bf5ef35::t_254f6843e38703 136-138
+src/graph_quality.rs
+  s_cd17db9bf5ef35::t_be1c9da0ec8d95 524-527
+  s_cd17db9bf5ef35::t_93c9cb57f1d748 584-587
+  s_cd17db9bf5ef35::t_5aa471b784bea0 6-11
+  s_cd17db9bf5ef35::t_4e45df9c6696d1 35-38
+  s_cd17db9bf5ef35::t_28cba0a63a8a57 426-502
+  s_cd17db9bf5ef35::t_b75f5a5cb77ade 636-765
+  s_a29d7202c346d5::t_70000391b5f2f3 583
+src/prompt_template/extractor_edge_system
+  s_cd17db9bf5ef35::t_527707dac3d895 41-42,45-53
+src/main.rs
+  s_a29d7202c346d5::t_5ffb47c725d0ba 174-181,188
+  s_a29d7202c346d5::t_f6775718f31891 97-100
+  s_a29d7202c346d5::t_70454c02671e1c 19-20
+  s_a29d7202c346d5::t_cc8d771ffe181b 288
+  s_a29d7202c346d5::t_a9b6470a91179c 289-298,308
+src/prompt_template/questioner/retrieve_system
+  s_cd17db9bf5ef35::t_721c15341e2af7 114-115,118-127
+  s_a29d7202c346d5::t_53b491a4c55495 128
+src/batch.rs
+  s_a29d7202c346d5::t_08a8c869ece794 254-258
+  s_a29d7202c346d5::t_f6cfb922954ddd 304
+  s_a29d7202c346d5::t_1eecf411b84a90 23
+  s_a29d7202c346d5::t_0eca62fcd84858 12
+  s_a29d7202c346d5::t_d17a1d549d5694 247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "0730fe52ee5807e008dcee3eb1b106ea632c890c",
+  "prompts": {},
+  "sessions": {
+    "s_a29d7202c346d5": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0a154aeb0ffeK6nCGqlHWxxC3k",
+        "model": "unknown"
+      },
+      "human_author": "dynamder <igaster@163.com>"
+    },
+    "s_cd17db9bf5ef35": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_096032f13ffehmr2baN4X0a6wj",
+        "model": "unknown"
+      },
+      "human_author": "dynamder <igaster@163.com>"
+    }
+  }
+}
