@@ -9,7 +9,7 @@ use tokio::sync::Semaphore;
 use crate::agents::{ExtractorAgent, QuestionerAgent, ScraperAgent};
 use crate::data_model::questioner::retrieve::RetrieveAssessInfo;
 use crate::data_model::retrieve_question::{
-    PerQueryExpectation, RetrQueryFileRaw, SubQuery, TestCaseQueryRaw, TestConfigRaw,
+    BlendSweepRaw, PerQueryExpectation, RetrQueryFileRaw, SubQuery, TestCaseQueryRaw, TestConfigRaw,
 };
 
 /// 批量处理配置
@@ -20,6 +20,7 @@ pub struct BatchConfig {
     pub model: String,
     pub parallel: usize,
     pub out_dir: PathBuf,
+    pub blend_sweep: Option<BlendSweepRaw>,
 }
 
 /// URL 条目（支持 name<TAB>url 格式）
@@ -243,14 +244,18 @@ async fn generate_questions(
         Some(graph_content), None, Some(out_dir),
     ).await?;
 
-    let retr_file = build_retr_query_file(&generated, &entry.slug);
+    let retr_file = build_retr_query_file(&generated, &entry.slug, &config.blend_sweep);
     let json = serde_json::to_string_pretty(&retr_file)?;
     std::fs::write(&question_path, &json)?;
     log.log_success(&entry.name, "question");
     Ok(())
 }
 
-fn build_retr_query_file(info: &RetrieveAssessInfo, slug: &str) -> RetrQueryFileRaw {
+fn build_retr_query_file(
+    info: &RetrieveAssessInfo,
+    slug: &str,
+    blend_sweep: &Option<BlendSweepRaw>,
+) -> RetrQueryFileRaw {
     let mut cases = Vec::new();
 
     for (i, q) in info.queries.iter().enumerate() {
@@ -296,7 +301,7 @@ fn build_retr_query_file(info: &RetrieveAssessInfo, slug: &str) -> RetrQueryFile
             max_results: 10,
             test_k_values: vec![1, 3, 5],
         },
-        blend_sweep: None,
+        blend_sweep: blend_sweep.clone(),
         test_cases: cases,
     }
 }

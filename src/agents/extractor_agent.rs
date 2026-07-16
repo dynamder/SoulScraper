@@ -10,7 +10,8 @@ use crate::data_model::extractor::{
 use crate::data_model::soul_mem::sit::SituationType;
 use crate::data_model::soul_mem::MemoryType;
 use crate::graph_quality::{
-    print_report, report_to_json, strip_illegal_edges, validate_graph,
+    connect_missing_proc_none, ensure_proc_none_node, normalize_proc_edges, print_report,
+    report_to_json, strip_illegal_edges, validate_graph,
 };
 use crate::util::{format_json_error, sanitize_json, strip_markdown_wrapping};
 
@@ -132,6 +133,9 @@ impl ExtractorAgent {
 
             apply_edges(&mut nodes, &edges);
             strip_illegal_edges(&mut nodes);
+            ensure_proc_none_node(&mut nodes);
+            connect_missing_proc_none(&mut nodes);
+            normalize_proc_edges(&mut nodes);
 
             let report = validate_graph(&nodes);
             print_report(&report);
@@ -170,6 +174,9 @@ impl ExtractorAgent {
                 Ok(edges2) => {
                     apply_edges(&mut nodes, &edges2);
                     strip_illegal_edges(&mut nodes);
+                    ensure_proc_none_node(&mut nodes);
+                    connect_missing_proc_none(&mut nodes);
+                    normalize_proc_edges(&mut nodes);
                     let report2 = validate_graph(&nodes);
                     print_report(&report2);
                     Self::save_stat_file(debug_dir, "graph_stats.json", &report_to_json(&report2));

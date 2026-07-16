@@ -16,7 +16,8 @@ use crate::{
     batch::{BatchConfig, run_batch},
     data_model::questioner::retrieve::RetrieveAssessInfo,
     data_model::retrieve_question::{
-        PerQueryExpectation, RetrQueryFileRaw, SubQuery, TestCaseQueryRaw, TestConfigRaw,
+        BlendSweepRaw, PerQueryExpectation, RetrQueryFileRaw, SubQuery, TestCaseQueryRaw,
+        TestConfigRaw,
     },
     io_src::{InputSource, OutputSource},
     util::combine_rankings,
@@ -93,6 +94,10 @@ struct Args {
 
     #[arg(short, long)]
     api_base: Option<String>,
+
+    /// 权重扫描：tag 权重列表（逗号分隔，如 0.3,0.5,0.7），适用于 question 和 batch 模式
+    #[arg(long)]
+    blend_tag_sweep: Option<String>,
 }
 
 /// 将 LLM 输出的 RetrieveAssessInfo 转换为 test_cases 数组
@@ -166,12 +171,21 @@ async fn main() -> anyhow::Result<()> {
         let out_dir = args
             .out_dir
             .ok_or_else(|| anyhow!("--out-dir is required when using --batch"))?;
+        let blend_sweep = args.blend_tag_sweep.as_ref().map(|s| {
+            let values: Vec<f64> = s
+                .split(',')
+                .map(|v| v.trim().parse().expect("Invalid blend tag sweep value"))
+                .collect();
+            BlendSweepRaw { tag_sweep: Some(values), pairs: None }
+        });
+
         let batch_config = BatchConfig {
             api_key: api_key.clone(),
             api_base: args.api_base.clone(),
             model: model.to_string(),
             parallel: args.parallel,
             out_dir: std::path::PathBuf::from(&out_dir),
+            blend_sweep,
         };
         run_batch(batch_config, batch_file).await?;
         return Ok(());
@@ -271,6 +285,17 @@ async fn main() -> anyhow::Result<()> {
 
                 let test_cases = build_test_cases(&generated_question);
 
+                let blend_sweep = args.blend_tag_sweep.as_ref().map(|s| {
+                    let values: Vec<f64> = s
+                        .split(',')
+                        .map(|v| v.trim().parse().expect("Invalid blend tag sweep value"))
+                        .collect();
+                    BlendSweepRaw {
+                        tag_sweep: Some(values),
+                        pairs: None,
+                    }
+                });
+
                 let retr_file = RetrQueryFileRaw {
                     name: name.clone(),
                     description: description.clone(),
@@ -280,7 +305,7 @@ async fn main() -> anyhow::Result<()> {
                         max_results: *max_results,
                         test_k_values: k_values,
                     },
-                    blend_sweep: None,
+                    blend_sweep,
                     test_cases,
                 };
 

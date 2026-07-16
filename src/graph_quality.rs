@@ -3,8 +3,12 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::data_model::extractor::GraphNode;
-use crate::data_model::soul_mem::{MemoryLinkType, MemoryType};
+use crate::data_model::extractor::{GraphLink, GraphNode};
+use crate::data_model::soul_mem::{
+    proc::{Action, ActionType, ProcMemLink, ProcMemory},
+    sit::{AbstractSituation, SituationType},
+    MemoryLinkType, MemoryType,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GraphQualityReport {
@@ -28,6 +32,10 @@ pub struct GraphQualityReport {
     pub is_structurally_valid: bool,
     pub failures: Vec<String>,
     pub warnings: Vec<String>,
+    pub has_proc_none: bool,
+    pub abstract_sit_type_count: usize,
+    pub proc_without_incoming_proc: Vec<String>,
+    pub abs_sit_without_proc: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -415,6 +423,83 @@ pub fn validate_graph(nodes: &[GraphNode]) -> GraphQualityReport {
         failures.push("self description lacks 我 (first person)".to_string());
     }
 
+    // ── Abstract situation type diversity check ──
+    let mut abs_sit_types: HashSet<&'static str> = HashSet::new();
+    for node in nodes {
+        if let MemoryType::Situation(SituationType::AbstractSituation(ref abs)) = node.mem_type {
+            let type_name = match abs {
+                AbstractSituation::Location(_) => "Location",
+                AbstractSituation::Participant(_) => "Participant",
+                AbstractSituation::Environment(_) => "Environment",
+                AbstractSituation::Event(_) => "Event",
+            };
+            abs_sit_types.insert(type_name);
+        }
+    }
+    let abstract_sit_type_count = abs_sit_types.len();
+    if abstract_sit_type_count < 2 {
+        warnings.push(format!(
+            "abstract_sit_type_count {} < 2 (need at least 2 different abstract situation types)",
+            abstract_sit_type_count
+        ));
+    }
+
+    // ── Procedure incoming Proc edge check ──
+    let mut proc_has_incoming: HashSet<&str> = HashSet::new();
+    for node in nodes {
+        if classify_node_type(&node.mem_type) != "Situation" {
+            continue;
+        }
+        for link in &node.mem_links {
+            if let MemoryLinkType::Proc(_) = link.link_type {
+                proc_has_incoming.insert(&link.to);
+            }
+        }
+    }
+    let mut proc_without_incoming_proc: Vec<String> = Vec::new();
+    for node in nodes {
+        if node.id == "proc_none" {
+            continue;
+        }
+        if classify_node_type(&node.mem_type) == "Procedure"
+            && !proc_has_incoming.contains(node.id.as_str())
+        {
+            proc_without_incoming_proc.push(node.id.clone());
+        }
+    }
+    if !proc_without_incoming_proc.is_empty() {
+        warnings.push(format!(
+            "Proc nodes without incoming Proc edge: {}",
+            proc_without_incoming_proc.join(", ")
+        ));
+    }
+
+    // ── Abstract situation outgoing Proc edge check ──
+    let mut abs_sit_without_proc: Vec<String> = Vec::new();
+    for node in nodes {
+        if let MemoryType::Situation(SituationType::AbstractSituation(_)) = node.mem_type {
+            let has_proc_out = node
+                .mem_links
+                .iter()
+                .any(|link| matches!(link.link_type, MemoryLinkType::Proc(_)));
+            if !has_proc_out {
+                abs_sit_without_proc.push(node.id.clone());
+            }
+        }
+    }
+    if !abs_sit_without_proc.is_empty() {
+        warnings.push(format!(
+            "AbstractSituation nodes without outgoing Proc edge: {}",
+            abs_sit_without_proc.join(", ")
+        ));
+    }
+
+    // ── proc_none existence check ──
+    let has_proc_none = nodes.iter().any(|n| n.id == "proc_none");
+    if !has_proc_none {
+        failures.push("missing proc_none node".to_string());
+    }
+
     GraphQualityReport {
         node_count: n,
         edge_count: m,
@@ -436,6 +521,10 @@ pub fn validate_graph(nodes: &[GraphNode]) -> GraphQualityReport {
         illegal_edges,
         failures,
         warnings,
+        has_proc_none,
+        abstract_sit_type_count,
+        proc_without_incoming_proc,
+        abs_sit_without_proc,
     }
 }
 
@@ -492,6 +581,11 @@ pub fn print_report(r: &GraphQualityReport) {
         }
     );
     println!(
+        "Proc none: {} | Abs sit types: {}",
+        if r.has_proc_none { "yes" } else { "no" },
+        r.abstract_sit_type_count
+    );
+    println!(
         "Illegal: {} | Structurally valid: {}",
         r.illegal_edges.len(),
         r.is_structurally_valid
@@ -537,6 +631,136 @@ pub fn strip_illegal_edges(nodes: &mut [GraphNode]) {
             to_type != "Situation" && to_type != "Procedure"
         });
     }
+}
+
+/// 确保 proc_none 节点存在，若缺失则创建一个
+pub fn ensure_proc_none_node(nodes: &mut Vec<GraphNode>) {
+    if nodes.iter().any(|n| n.id == "proc_none") {
+        return;
+    }
+    let proc_none = GraphNode {
+        id: "proc_none".to_string(),
+        tags: vec!["无动作".to_string(), "空闲".to_string(), "默认".to_string()],
+        mem_type: MemoryType::Procedure(ProcMemory::new(Action::new(
+            "我暂时没有采取任何特定行动".to_string(),
+            ActionType::new_think(),
+        ))),
+        mem_links: Vec::new(),
+    };
+    eprintln!("[proc_none] auto-created missing proc_none node");
+    nodes.push(proc_none);
+}
+
+/// 对每个源节点的所有 Proc 出边做 softmax 归一化，使 prob 和为 1
+pub fn normalize_proc_edges(nodes: &mut [GraphNode]) {
+    for i in 0..nodes.len() {
+        let mut proc_probs: Vec<(usize, f64)> = Vec::new();
+        for (j, link) in nodes[i].mem_links.iter().enumerate() {
+            if let MemoryLinkType::Proc(ref p) = link.link_type {
+                proc_probs.push((j, p.prob));
+            }
+        }
+        if proc_probs.len() < 2 {
+            if proc_probs.len() == 1 && (proc_probs[0].1 - 1.0).abs() > 1e-9 {
+                // Single Proc edge — set prob to 1.0
+                if let MemoryLinkType::Proc(ref mut p) =
+                    nodes[i].mem_links[proc_probs[0].0].link_type
+                {
+                    p.prob = 1.0;
+                }
+            }
+            continue;
+        }
+        // Softmax normalization
+        let max_p = proc_probs
+            .iter()
+            .map(|(_, p)| *p)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let exps: Vec<f64> = proc_probs
+            .iter()
+            .map(|(_, p)| ((p - max_p) / 1.0).exp())
+            .collect();
+        let sum_exp: f64 = exps.iter().sum();
+        if sum_exp > 0.0 {
+            for (k, (idx, _)) in proc_probs.iter().enumerate() {
+                if let MemoryLinkType::Proc(ref mut p) = nodes[i].mem_links[*idx].link_type {
+                    p.prob = exps[k] / sum_exp;
+                }
+            }
+        }
+    }
+}
+
+/// 为每个未连接 proc_none 的 AbstractSituation 添加一条 Proc 边
+/// 新边的 prob 设为该源节点现有 Proc 边 prob 的中位数（若无则用 0.5）
+/// 然后对该源节点所有 Proc 边做 softmax 归一化
+pub fn connect_missing_proc_none(nodes: &mut Vec<GraphNode>) {
+    let has_proc_none = nodes.iter().any(|n| n.id == "proc_none");
+    if !has_proc_none {
+        ensure_proc_none_node(nodes);
+    }
+
+    for i in 0..nodes.len() {
+        let is_abstract_sit = match nodes[i].mem_type {
+            MemoryType::Situation(SituationType::AbstractSituation(_)) => true,
+            _ => false,
+        };
+        if !is_abstract_sit {
+            continue;
+        }
+
+        let source_id = nodes[i].id.clone();
+
+        // Check if already connected to proc_none
+        let already_has_none = nodes[i]
+            .mem_links
+            .iter()
+            .any(|l| l.to == "proc_none" && matches!(l.link_type, MemoryLinkType::Proc(_)));
+        if already_has_none {
+            continue;
+        }
+
+        // Collect existing Proc edge probs from this source
+        let mut existing_probs: Vec<f64> = nodes[i]
+            .mem_links
+            .iter()
+            .filter_map(|l| {
+                if let MemoryLinkType::Proc(ref p) = l.link_type {
+                    Some(p.prob)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Compute median of existing probs, default to 0.5 if empty
+        let new_prob = if existing_probs.is_empty() {
+            0.5
+        } else {
+            existing_probs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let mid = existing_probs.len() / 2;
+            if existing_probs.len() % 2 == 0 {
+                (existing_probs[mid - 1] + existing_probs[mid]) / 2.0
+            } else {
+                existing_probs[mid]
+            }
+        };
+
+        eprintln!(
+            "[proc_none] connecting {} -> proc_none with initial prob {:.4}",
+            source_id, new_prob
+        );
+
+        nodes[i].mem_links.push(GraphLink {
+            from: source_id.clone(),
+            to: "proc_none".to_string(),
+            intensity: 1.0,
+            link_type: MemoryLinkType::Proc(ProcMemLink { prob: new_prob }),
+        });
+    }
+
+    // Re-normalize after adding missing connections
+    normalize_proc_edges(nodes);
 }
 
 pub fn report_to_json(r: &GraphQualityReport) -> String {
