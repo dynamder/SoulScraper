@@ -23,15 +23,15 @@ struct LlmResult {
 pub struct ExtractorAgent;
 
 impl ExtractorAgent {
-    pub async fn extract(
+    /// Phase 1: 仅提取节点，返回节点列表
+    pub async fn extract_nodes_only(
         api_key: &str,
         api_base: Option<&str>,
         model: &str,
         character_research: &str,
         debug_dir: Option<&Path>,
     ) -> anyhow::Result<GraphNodeList> {
-        // ── Phase 1: nodes ──
-        let mut nodes = loop {
+        let nodes = loop {
             let raw = Self::call_llm(
                 api_key, api_base, model,
                 "extractor_node_system",
@@ -89,9 +89,18 @@ impl ExtractorAgent {
                 }
             }
         };
+        Ok(nodes)
+    }
 
-        // ── Phase 2: edges ──
-        let node_summary = Self::build_node_summary(&nodes);
+    /// Phase 2: 基于已有节点列表生成边，直接修改 nodes 中的 mem_links
+    pub async fn extract_edges_only(
+        api_key: &str,
+        api_base: Option<&str>,
+        model: &str,
+        nodes: &mut Vec<GraphNode>,
+        debug_dir: Option<&Path>,
+    ) -> anyhow::Result<()> {
+        let node_summary = Self::build_node_summary(nodes);
 
         loop {
             let raw = Self::call_llm(
@@ -131,18 +140,18 @@ impl ExtractorAgent {
                 }
             };
 
-            apply_edges(&mut nodes, &edges);
-            strip_illegal_edges(&mut nodes);
-            ensure_proc_none_node(&mut nodes);
-            connect_missing_proc_none(&mut nodes);
-            normalize_proc_edges(&mut nodes);
+            apply_edges(nodes, &edges);
+            strip_illegal_edges(nodes);
+            ensure_proc_none_node(nodes);
+            connect_missing_proc_none(nodes);
+            normalize_proc_edges(nodes);
 
-            let report = validate_graph(&nodes);
+            let report = validate_graph(nodes);
             print_report(&report);
             Self::save_stat_file(debug_dir, "graph_stats.json", &report_to_json(&report));
 
             if report.is_structurally_valid {
-                return Ok(nodes);
+                return Ok(());
             }
 
             // Structural failure — regenerate edges
@@ -160,7 +169,7 @@ impl ExtractorAgent {
             Self::save_debug_file(debug_dir, "raw_failed_edges_structure.json", &serde_json::to_string_pretty(&edges).unwrap());
 
             // Rebuild summary and retry
-            let node_summary = Self::build_node_summary(&nodes);
+            let node_summary = Self::build_node_summary(nodes);
             let raw2 = Self::call_llm(
                 api_key, api_base, model,
                 "extractor_edge_system",
@@ -172,16 +181,16 @@ impl ExtractorAgent {
             let cleaned2 = sanitize_json(&strip_markdown_wrapping(&raw2.content));
             match serde_json::from_str::<EdgeList>(&cleaned2) {
                 Ok(edges2) => {
-                    apply_edges(&mut nodes, &edges2);
-                    strip_illegal_edges(&mut nodes);
-                    ensure_proc_none_node(&mut nodes);
-                    connect_missing_proc_none(&mut nodes);
-                    normalize_proc_edges(&mut nodes);
-                    let report2 = validate_graph(&nodes);
+                    apply_edges(nodes, &edges2);
+                    strip_illegal_edges(nodes);
+                    ensure_proc_none_node(nodes);
+                    connect_missing_proc_none(nodes);
+                    normalize_proc_edges(nodes);
+                    let report2 = validate_graph(nodes);
                     print_report(&report2);
                     Self::save_stat_file(debug_dir, "graph_stats.json", &report_to_json(&report2));
                     if report2.is_structurally_valid {
-                        return Ok(nodes);
+                        return Ok(());
                     }
                     return Err(anyhow::anyhow!(
                         "Graph quality not met after 2 edge generation attempts:\n{}",
@@ -196,6 +205,19 @@ impl ExtractorAgent {
                 }
             }
         }
+    }
+
+    /// 完整提取：节点 + 边（保持向后兼容）
+    pub async fn extract(
+        api_key: &str,
+        api_base: Option<&str>,
+        model: &str,
+        character_research: &str,
+        debug_dir: Option<&Path>,
+    ) -> anyhow::Result<GraphNodeList> {
+        let mut nodes = Self::extract_nodes_only(api_key, api_base, model, character_research, debug_dir).await?;
+        Self::extract_edges_only(api_key, api_base, model, &mut nodes, debug_dir).await?;
+        Ok(nodes)
     }
 
     // ── LLM 调用 ──

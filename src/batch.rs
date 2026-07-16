@@ -7,10 +7,26 @@ use anyhow::anyhow;
 use tokio::sync::Semaphore;
 
 use crate::agents::{ExtractorAgent, QuestionerAgent, ScraperAgent};
+use crate::data_model::extractor::GraphNode;
 use crate::data_model::questioner::retrieve::RetrieveAssessInfo;
 use crate::data_model::retrieve_question::{
     BlendSweepRaw, PerQueryExpectation, RetrQueryFileRaw, SubQuery, TestCaseQueryRaw, TestConfigRaw,
 };
+
+/// 管道阶段索引
+pub const STAGE_SCRAPE: u32 = 0;
+pub const STAGE_EXTRACT_NODE: u32 = 1;
+pub const STAGE_EXTRACT_EDGE: u32 = 2;
+pub const STAGE_QUESTION: u32 = 3;
+
+pub fn stage_from_name(name: &str) -> u32 {
+    match name {
+        "extract_node" => STAGE_EXTRACT_NODE,
+        "extract_edge" => STAGE_EXTRACT_EDGE,
+        "question" => STAGE_QUESTION,
+        _ => STAGE_SCRAPE,
+    }
+}
 
 /// 批量处理配置
 #[derive(Debug, Clone)]
@@ -21,6 +37,9 @@ pub struct BatchConfig {
     pub parallel: usize,
     pub out_dir: PathBuf,
     pub blend_sweep: Option<BlendSweepRaw>,
+    pub resume_from: u32,
+    pub ignore_already_fail: bool,
+    pub resume: bool,
 }
 
 /// URL 条目（支持 name<TAB>url 格式）
@@ -92,6 +111,20 @@ pub async fn run_batch(config: BatchConfig, urls_file: &str) -> anyhow::Result<(
     eprintln!("Loaded {total} URLs from {urls_file}");
     eprintln!("Output dir: {}", config.out_dir.display());
     eprintln!("Parallel: {}", config.parallel);
+    if config.resume {
+        eprintln!("Resume mode: skip stages where output already exists, fill missing ones");
+    } else if config.resume_from > 0 {
+        let stage_name = match config.resume_from {
+            STAGE_EXTRACT_NODE => "extract_node",
+            STAGE_EXTRACT_EDGE => "extract_edge",
+            STAGE_QUESTION => "question",
+            _ => "scrape",
+        };
+        eprintln!("Resume from: {stage_name} (regenerate from this stage onward)");
+        if config.ignore_already_fail {
+            eprintln!("Ignore already fail: raw_failed_* will be cleared before regeneration");
+        }
+    }
 
     let semaphore = Arc::new(Semaphore::new(config.parallel));
     let output = AtomicOutput::new(total);
@@ -126,42 +159,115 @@ pub async fn run_batch(config: BatchConfig, urls_file: &str) -> anyhow::Result<(
     Ok(())
 }
 
-/// 处理单个 URL：scrape → extract → question
+/// 如果启用了 ignore_already_fail，删除 out_dir 中匹配前缀的 raw_failed_* 文件
+fn clean_raw_failed(out_dir: &Path, prefix: &str) {
+    if !out_dir.exists() {
+        return;
+    }
+    if let Ok(entries) = std::fs::read_dir(out_dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with("raw_failed_") && name_str.contains(prefix) {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+}
+
+/// 处理单个 URL：scrape → extract_node → extract_edge → question
+/// resume_from 决定截止阶段：该阶段及之后的产物全部重生成，之前的产物复用
 async fn process_single_url(
     config: &BatchConfig,
     entry: &UrlEntry,
     log: &mut TaskLog,
 ) -> BatchResult {
     let out_dir = config.out_dir.join(&entry.slug);
+    let resume = config.resume_from;
+    let should_ignore_fail = config.ignore_already_fail;
 
-    // Step 1: scrape
-    if let Err(e) = scrape_url(config, entry, &out_dir, log).await {
-        return BatchResult {
-            name: entry.name.clone(), url: entry.url.clone(), success: false,
-            error: Some(format!("scrape failed: {e}")),
-        };
+    // ── stage 0: scrape ──
+    if config.resume && out_dir.join("scrape.md").exists() {
+        log.log_skip(&entry.name, "scrape");
+    } else if resume == STAGE_SCRAPE {
+        if let Err(e) = scrape_url(config, entry, &out_dir, log).await {
+            return err_result(&entry, "scrape", e);
+        }
+    } else if !out_dir.join("scrape.md").exists() {
+        if let Err(e) = scrape_url(config, entry, &out_dir, log).await {
+            return err_result(&entry, "scrape", e);
+        }
+    } else {
+        log.log_skip(&entry.name, "scrape");
     }
 
-    // Step 2: extract
-    let graph_content = match extract_graph(config, entry, &out_dir, log).await {
-        Ok(c) => c,
-        Err(e) => {
-            return BatchResult {
-                name: entry.name.clone(), url: entry.url.clone(), success: false,
-                error: Some(format!("extract failed: {e}")),
-            };
+    // ── stage 1: extract_node ──
+    if config.resume && out_dir.join("graph.json").exists() {
+        log.log_skip(&entry.name, "extract");
+    } else if resume <= STAGE_EXTRACT_NODE {
+        if should_ignore_fail {
+            clean_raw_failed(&out_dir, "node");
         }
+        if let Err(e) = extract_nodes_only(config, entry, &out_dir, log).await {
+            return err_result(&entry, "extract_node", e);
+        }
+    } else if !out_dir.join("graph_nodes.json").exists() && !out_dir.join("graph.json").exists() {
+        if let Err(e) = extract_graph_full(config, entry, &out_dir, log).await {
+            return err_result(&entry, "extract", e);
+        }
+    } else {
+        log.log_skip(&entry.name, "extract_node");
+    }
+
+    // ── stage 2: extract_edge (finalize graph.json) ──
+    if config.resume && out_dir.join("graph.json").exists() {
+        log.log_skip(&entry.name, "extract_edge");
+    } else if resume <= STAGE_EXTRACT_EDGE {
+        if should_ignore_fail {
+            clean_raw_failed(&out_dir, "edge");
+        }
+        if let Err(e) = extract_graph_edges(config, entry, &out_dir, log).await {
+            return err_result(&entry, "extract_edge", e);
+        }
+    } else if !out_dir.join("graph.json").exists() {
+        if let Err(e) = extract_graph_edges(config, entry, &out_dir, log).await {
+            return err_result(&entry, "extract_edge", e);
+        }
+    } else {
+        log.log_skip(&entry.name, "extract_edge");
+    }
+
+    // ── stage 3: question ──
+    let graph_content = match std::fs::read_to_string(out_dir.join("graph.json")) {
+        Ok(c) => c,
+        Err(e) => return err_result(&entry, "read_graph", format!("cannot read graph.json: {e}")),
     };
 
-    // Step 3: question
-    if let Err(e) = generate_questions(config, entry, &out_dir, &graph_content, log).await {
-        return BatchResult {
-            name: entry.name.clone(), url: entry.url.clone(), success: false,
-            error: Some(format!("question failed: {e}")),
-        };
+    if config.resume && out_dir.join("question.json").exists() {
+        log.log_skip(&entry.name, "question");
+    } else if resume <= STAGE_QUESTION {
+        if should_ignore_fail {
+            clean_raw_failed(&out_dir, "question");
+        }
+        if let Err(e) = generate_questions(config, entry, &out_dir, &graph_content, log).await {
+            return err_result(&entry, "question", e);
+        }
+    } else if !out_dir.join("question.json").exists() {
+        if let Err(e) = generate_questions(config, entry, &out_dir, &graph_content, log).await {
+            return err_result(&entry, "question", e);
+        }
+    } else {
+        log.log_skip(&entry.name, "question");
     }
 
     BatchResult { name: entry.name.clone(), url: entry.url.clone(), success: true, error: None }
+}
+
+fn err_result(entry: &UrlEntry, stage: &str, e: impl std::fmt::Display) -> BatchResult {
+    BatchResult {
+        name: entry.name.clone(), url: entry.url.clone(), success: false,
+        error: Some(format!("{stage} failed: {e}")),
+    }
 }
 
 #[derive(Debug)]
@@ -179,38 +285,46 @@ async fn scrape_url(
     out_dir: &Path,
     log: &mut TaskLog,
 ) -> anyhow::Result<()> {
-    let scrape_path = out_dir.join("scrape.md");
-    if scrape_path.exists() {
-        log.log_skip(&entry.name, "scrape");
-        return Ok(());
-    }
-
     log.log_scrape(&entry.name);
     let result = ScraperAgent::scrape(
         &config.api_key, config.api_base.as_deref(), &config.model, &entry.url, 10,
     ).await?;
 
     std::fs::create_dir_all(out_dir)?;
-    std::fs::write(&scrape_path, &result)?;
+    std::fs::write(out_dir.join("scrape.md"), &result)?;
     log.log_success(&entry.name, "scrape");
     Ok(())
 }
 
-/// extract 步骤
-async fn extract_graph(
+/// 仅提取节点（Phase 1），保存 graph_nodes.json
+async fn extract_nodes_only(
     config: &BatchConfig,
     entry: &UrlEntry,
     out_dir: &Path,
     log: &mut TaskLog,
-) -> anyhow::Result<String> {
-    let extract_path = out_dir.join("graph.json");
-    if extract_path.exists() {
-        log.log_skip(&entry.name, "graph");
-        return Ok(std::fs::read_to_string(&extract_path)?);
-    }
+) -> anyhow::Result<()> {
+    let scrape_content = std::fs::read_to_string(out_dir.join("scrape.md"))?;
 
-    let scrape_path = out_dir.join("scrape.md");
-    let scrape_content = std::fs::read_to_string(&scrape_path)?;
+    log.log_extract(&entry.name);
+    let nodes = ExtractorAgent::extract_nodes_only(
+        &config.api_key, config.api_base.as_deref(), &config.model,
+        &scrape_content, Some(out_dir),
+    ).await?;
+
+    let json = serde_json::to_string_pretty(&nodes)?;
+    std::fs::write(out_dir.join("graph_nodes.json"), &json)?;
+    log.log_success(&entry.name, "extract_node");
+    Ok(())
+}
+
+/// 完整提取：节点 + 边，保存 graph.json（向后兼容）
+async fn extract_graph_full(
+    config: &BatchConfig,
+    entry: &UrlEntry,
+    out_dir: &Path,
+    log: &mut TaskLog,
+) -> anyhow::Result<()> {
+    let scrape_content = std::fs::read_to_string(out_dir.join("scrape.md"))?;
 
     log.log_extract(&entry.name);
     let graph = ExtractorAgent::extract(
@@ -219,9 +333,42 @@ async fn extract_graph(
     ).await?;
 
     let json = serde_json::to_string_pretty(&graph)?;
-    std::fs::write(&extract_path, &json)?;
+    std::fs::write(out_dir.join("graph.json"), &json)?;
+    std::fs::write(out_dir.join("graph_nodes.json"), &json)?;
     log.log_success(&entry.name, "extract");
-    Ok(json)
+    Ok(())
+}
+
+/// 基于已有节点生成边（Phase 2），保存 graph.json
+async fn extract_graph_edges(
+    config: &BatchConfig,
+    entry: &UrlEntry,
+    out_dir: &Path,
+    log: &mut TaskLog,
+) -> anyhow::Result<()> {
+    // Read existing nodes (from graph_nodes.json if available, or graph.json)
+    let nodes_json = out_dir.join("graph_nodes.json");
+    let graph_json = out_dir.join("graph.json");
+    let nodes: Vec<GraphNode> = if nodes_json.exists() {
+        serde_json::from_str(&std::fs::read_to_string(&nodes_json)?)?
+    } else if graph_json.exists() {
+        serde_json::from_str(&std::fs::read_to_string(&graph_json)?)?
+    } else {
+        // No existing nodes — run full extraction
+        return extract_graph_full(config, entry, out_dir, log).await;
+    };
+
+    log.log_extract(&entry.name);
+    let mut nodes = nodes;
+    ExtractorAgent::extract_edges_only(
+        &config.api_key, config.api_base.as_deref(), &config.model,
+        &mut nodes, Some(out_dir),
+    ).await?;
+
+    let json = serde_json::to_string_pretty(&nodes)?;
+    std::fs::write(&graph_json, &json)?;
+    log.log_success(&entry.name, "extract_edge");
+    Ok(())
 }
 
 /// question 步骤

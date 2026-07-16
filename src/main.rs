@@ -13,7 +13,7 @@ use clap::{Args as ClapArgs, CommandFactory, Parser};
 
 use crate::{
     agents::{ExtractorAgent, QuestionerAgent, ScraperAgent},
-    batch::{BatchConfig, run_batch},
+    batch::{BatchConfig, run_batch, stage_from_name},
     data_model::questioner::retrieve::RetrieveAssessInfo,
     data_model::retrieve_question::{
         BlendSweepRaw, PerQueryExpectation, RetrQueryFileRaw, SubQuery, TestCaseQueryRaw,
@@ -98,6 +98,19 @@ struct Args {
     /// 权重扫描：tag 权重列表（逗号分隔，如 0.3,0.5,0.7），适用于 question 和 batch 模式
     #[arg(long)]
     blend_tag_sweep: Option<String>,
+
+    /// 批量重生成截止阶段：复用该阶段之前的所有文件，重生成该阶段及之后的内容。
+    /// 可选值：extract_node / extract_edge / question
+    #[arg(long)]
+    resume_from: Option<String>,
+
+    /// 配合 --resume-from 使用：重生成前清除该阶段的 raw_failed_* 文件
+    #[arg(long, default_value_t = false)]
+    ignore_already_fail: bool,
+
+    /// 批量补缺模式：跳过文件已存在的阶段，只生成缺失的文件
+    #[arg(long, default_value_t = false)]
+    resume: bool,
 }
 
 /// 将 LLM 输出的 RetrieveAssessInfo 转换为 test_cases 数组
@@ -179,6 +192,9 @@ async fn main() -> anyhow::Result<()> {
             BlendSweepRaw { tag_sweep: Some(values), pairs: None }
         });
 
+        let resume_from = args.resume_from.as_deref()
+            .map(stage_from_name)
+            .unwrap_or(0);
         let batch_config = BatchConfig {
             api_key: api_key.clone(),
             api_base: args.api_base.clone(),
@@ -186,6 +202,9 @@ async fn main() -> anyhow::Result<()> {
             parallel: args.parallel,
             out_dir: std::path::PathBuf::from(&out_dir),
             blend_sweep,
+            resume_from,
+            ignore_already_fail: args.ignore_already_fail,
+            resume: args.resume,
         };
         run_batch(batch_config, batch_file).await?;
         return Ok(());
