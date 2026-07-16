@@ -1,0 +1,48 @@
+src/batch.rs
+  s_cd17db9bf5ef35::t_a8b75e828aea95 190-192,205-207,223-225,246-248
+  s_cd17db9bf5ef35::t_b15f3dcfd743c7 42
+  s_cd17db9bf5ef35::t_4de41ee8048a86 117-127
+  s_cd17db9bf5ef35::t_66dbcb5cb2b412 16-30,40-41
+  s_cd17db9bf5ef35::t_29817ae2a9d698 10
+  s_cd17db9bf5ef35::t_9be9dd3b1bf733 114-116
+  s_cd17db9bf5ef35::t_b200c14fe59def 162-177,179,187,189,194,196-198,200-201,204,208-212,214,216,219,222,226-228,230-234,236-237,239-243,249-251,253,255-257,259-260,266-270
+  s_cd17db9bf5ef35::t_40c2abe83fe095 178,186,193,195,199,215,217-218,220-221,229,235,238,252,254,258
+  s_cd17db9bf5ef35::t_d90fd8553f038c 271,294,299-300,305-312,314-327,336-337,339-371
+  s_a29d7202c346d5::t_aac82d51d331fd 272
+src/agents/extractor_agent.rs
+  s_cd17db9bf5ef35::t_853a5726cdc2ca 26-27,34,92-93,95-103,143-147,149,154,172,184-189,193,210-221
+  s_a29d7202c346d5::t_ff61319dd245e9 222
+src/main.rs
+  s_cd17db9bf5ef35::t_0e6a0d285bc36c 207
+  s_cd17db9bf5ef35::t_f482896a1cf3f3 16
+  s_cd17db9bf5ef35::t_4b5382b0365dc6 110-113
+  s_cd17db9bf5ef35::t_ae290399bfb2eb 101-109
+  s_cd17db9bf5ef35::t_3b6d56a3d2de2c 195,197,205-206
+  s_cd17db9bf5ef35::t_e52e6ebf267e6d 196
+test_batch_url.txt
+  s_a29d7202c346d5::t_30bbbaeec8336e 2-6,9-14,17-21,24-26,29-30,33-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "dbd7ffe32ad8eeedb122b169d694ab53ec0ef965",
+  "prompts": {},
+  "sessions": {
+    "s_a29d7202c346d5": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_0a154aeb0ffeK6nCGqlHWxxC3k",
+        "model": "unknown"
+      },
+      "human_author": "dynamder <igaster@163.com>"
+    },
+    "s_cd17db9bf5ef35": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_096032f13ffehmr2baN4X0a6wj",
+        "model": "unknown"
+      },
+      "human_author": "dynamder <igaster@163.com>"
+    }
+  }
+}
